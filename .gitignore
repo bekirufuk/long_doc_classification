@@ -1,8 +1,9 @@
 models/
 logs/
 wandb/
-data/
-test/
+tests/
+*.csv
+*.tsv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
