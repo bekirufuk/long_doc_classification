@@ -1,4 +1,4 @@
-name: longformer
+name: long_doc_classification
 channels:
   - defaults
 dependencies:
