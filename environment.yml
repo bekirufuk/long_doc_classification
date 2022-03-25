@@ -1,4 +1,4 @@
-name: long_doc_classification
+name: long_doc_class
 channels:
   - defaults
 dependencies:
