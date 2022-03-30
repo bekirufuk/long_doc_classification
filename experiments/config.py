@@ -3,13 +3,11 @@ import json
 import datetime
 
 
-date = datetime.datetime.now()
 seed = 42
 
 # Directory parameters
 data_dir = os.path.expanduser('data/patentsview')
 root_dir = os.path.expanduser("experiments")
-patents_year="2019"
 
 # Model parameters.
 label2id = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4, "F": 5, "G": 6, "H": 7}
@@ -57,11 +55,11 @@ download_repo_name = 'ufukhaman/uspto_patents_2019'
 
 # Logging parameters.
 log_interval = 50
-
+date = datetime.datetime.now()
 log_name = 'no_global_medium_' + date.strftime("%Y-%m-%d-%H%M")
 
 # with open(os.path.join(root_dir, 'longformer_config.json')) as f:
-#     model_config = json.load(f)
+    # model_config = json.load(f)
 model_config = ''
 
 wandb_config = dict(
@@ -84,7 +82,6 @@ wandb_config = dict(
 
     global_attention_mapping = global_attention_mapping,
 
-    dataset = 'patents_'+patents_year,
     model = model_name,
     input_size = max_length,
     classes = num_labels,
