@@ -7,7 +7,7 @@ from transformers import LongformerTokenizerFast
 
 # Merges Detailed ddescription files of patents with therir class info. Then chunks them into .csv files.
 class Manager():
-    def __init__(self, data_name='patentsview', chunksize=100, engine='c', testing=True, nrows=500, skiprows=0):
+    def __init__(self, data_name='patentsview', chunksize=20000, engine='c', testing=False, nrows=100, skiprows=0):
 
         self.data_name = data_name
         self.data_dir = os.path.expanduser('data/'+self.data_name)
@@ -112,7 +112,7 @@ class Manager():
     def finish(self):
 
         with open(self.log_dir, 'a') as f:
-            f.write('#### Merge Operation Finished #### chunk size:{}, end date:{}, total recorded:{} \n\n'.format(self.chunksize,
+            f.write('*** Merge Operation Finished #### chunk size:{}, end date:{}, total recorded:{} \n\n'.format(self.chunksize,
                                                                                                         datetime.datetime.now().strftime("%Y-%m-%d-%H:%M"),
                                                                                                         self.saved_record_count
                                                                                                         ))
@@ -130,8 +130,8 @@ class Manager():
         dataset = Dataset.from_pandas(chunk)
         tokenized_dataset = self.tokenize(dataset, tokenizer)
         token_lengths = pd.Series(tokenized_dataset['input_ids']).apply(lambda x: len(x))
-        token_lengths = pd.Series(tokenized_dataset['input_ids']).apply(lambda x: len(x))
-        chunk = chunk[(token_lengths>=512) & (token_lengths<=4096)].reset_index(drop=True)
+        chunk['token_length'] = token_lengths
+        chunk = chunk[(chunk['token_length']>=512) & (chunk['token_length']<=4094)].reset_index(drop=True)
         groups = chunk.groupby('label')
         chunk = groups.apply(lambda x: x.sample(groups.size().min()).reset_index(drop=True))
         return chunk
