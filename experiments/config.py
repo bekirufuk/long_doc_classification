@@ -14,17 +14,18 @@ label2id = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4, "F": 5, "G": 6, "H": 7}
 id2label =  {0: "A", 1: "B", 2: "C", 3: "D", 4: "E", 5: "F", 6: "G", 7: "H"}
 labels_list = ["A","B","C","D","E","F","G","H"]
 num_labels = 8
-model_name="no_global_attention_medium_scale_0.1"
+model_name="no_global_balanced_medium"
 
-save_model = True
+save_model = False
 load_local_checkpoint = False
 
 # Training parameters.
 num_epochs = 5
 batch_size = 8
 
-num_train_samples = 16000
-num_test_samples = 1600
+downsample = True
+num_train_samples = 20000
+num_test_samples = 3200
 
 num_train_batches = (num_train_samples / batch_size)
 num_test_batches = (num_test_samples / batch_size)
@@ -32,9 +33,12 @@ num_test_batches = (num_test_samples / batch_size)
 num_train_steps = num_train_batches * num_epochs
 num_test_steps = num_test_batches * num_epochs
 
-lr = 3e-5
+test_split_ratio = 0.1
+
+lr = 5e-5
+weight_decay=0.01
 scheduler_type = 'linear'
-num_warmup_steps = int(0.3 * num_train_steps)
+num_warmup_steps = int(0.01 * num_train_steps)
 
 global_attention_mapping = 'none'
 
@@ -43,9 +47,7 @@ max_length = 4096 #16384
 load_saved_tokens = True
 save_tokens = False
 
-# Data preprocessing parameters.
-chunk_size = 10000
-single_chunk = False
+# Data parameters.
 
 upload_to_hf = False
 upload_repo_name = 'ufukhaman/uspto_patents_2019'
@@ -54,13 +56,12 @@ download_from_hf = False
 download_repo_name = 'ufukhaman/uspto_patents_2019'
 
 # Logging parameters.
-log_interval = 50
+log_interval = int(num_train_steps/200)
 date = datetime.datetime.now()
-log_name = 'no_global_medium_' + date.strftime("%Y-%m-%d-%H%M")
+log_name = model_name + '_' + date.strftime("%Y-%m-%d-%H%M")
 
-# with open(os.path.join(root_dir, 'longformer_config.json')) as f:
-    # model_config = json.load(f)
-model_config = ''
+with open(os.path.join(root_dir, 'longformer_config.json')) as f:
+    model_config = json.load(f)
 
 wandb_config = dict(
 
@@ -77,12 +78,14 @@ wandb_config = dict(
     num_test_steps = num_test_steps,
 
     learning_rate = lr,
+    weight_decay = weight_decay,
     scheduler_type = scheduler_type,
     num_warmup_steps = num_warmup_steps,
 
     global_attention_mapping = global_attention_mapping,
 
     model = model_name,
+    dataset = 'balanced_trimmed',
     input_size = max_length,
     classes = num_labels,
     log_interval = log_interval,

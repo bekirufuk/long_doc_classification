@@ -23,16 +23,18 @@ def batch_tokenizer(batch, tokenizer):
 # Load the existing tokenized data if wanted. Create a new one otherwise.
 def get_tokenized_data():
     if config.load_saved_tokens:
-        print("Using tokenized data from {}".format("patents_"+config.patents_year+"_tokenized"))
-        tokenized_data = load_from_disk(os.path.join(config.data_dir, "tokenized/patents_"+config.patents_year+"_tokenized"))
+        print("Using tokenized data...")
+        tokenized_data = load_from_disk(os.path.join(config.data_dir, "tokenized/"))
     else:
         print("Loading dataset from csv to be tokenized...")
         
         class_names = config.labels_list
         features = Features({'text': Value('string'), 'label': ClassLabel(names=class_names)})
-        data_files = os.path.join(config.data_dir, 'patents_'+config.patents_year+'.csv')
-        dataset = load_dataset('csv', data_files=data_files, features=features, cache_dir=os.path.join(config.data_dir, 'cache'))
-        dataset = dataset['train'].train_test_split(test_size=0.2)
+        data_files = os.path.join(config.data_dir, 'chunks/*.csv')
+        dataset = load_dataset('csv', data_files=data_files, features=features,
+                                cache_dir=os.path.join(config.data_dir, 'cache/'),
+                                )
+        dataset = dataset['train'].train_test_split(test_size=config.test_split_ratio)
         dataset = dataset.shuffle(seed=config.seed)
         print('Dataset Loaded:')
         print(dataset)
@@ -53,14 +55,18 @@ def get_tokenized_data():
 
 # Save tokenized data to be loaded afterwards
 def save_tokenized_data():
-    print("Saving tokenized data as {}".format("patents_"+config.patents_year+"_tokenized"))
-    tokenized_data.save_to_disk(os.path.join(config.data_dir, "tokenized/patents_"+config.patents_year+"_tokenized"))
+    print("Saving tokenized data...")
+    tokenized_data.save_to_disk(os.path.join(config.data_dir, "tokenized/"))
 
 
 # Trim and partition the dataset based on sample sizes.
 def get_partitions():
-    train_data = tokenized_data["train"].select(range(config.num_train_samples))
-    test_data = tokenized_data["test"].select(range(config.num_test_samples))
+    if config.downsample:
+        train_data = tokenized_data["train"].select(range(config.num_train_samples))
+        test_data = tokenized_data["test"].select(range(config.num_test_samples))
+    else:
+        train_data = tokenized_data["train"]
+        test_data = tokenized_data["test"]
     return train_data, test_data
 
 if __name__ == '__main__':
@@ -119,13 +125,14 @@ if __name__ == '__main__':
     # Start the logger
     model.train()
     print("\n----------\n TRAINING STARTED \n----------\n")
+    step_counter=0
     for epoch in range(config.num_epochs):
         for batch_id, batch in enumerate(train_dataloader):
             outputs = model(**batch, global_attention_mask=global_attention_mask)
             loss = outputs.loss
             accelerator.backward(loss)
 
-            if batch_id % config.log_interval == 0:
+            if step_counter % config.log_interval == 0:
                 logits = outputs.logits
                 predictions = torch.argmax(logits, dim=-1)
                 batch_result = utils.compute_metrics(predictions=predictions.cpu(), references=batch["labels"].cpu())['accuracy']
@@ -135,6 +142,7 @@ if __name__ == '__main__':
             lr_scheduler.step()
             optimizer.zero_grad()
             progress_bar.update(1)
+            step_counter+=1
     accelerator.free_memory()
     print("\n----------\n TRAINING FINISHED \n----------\n")
 
