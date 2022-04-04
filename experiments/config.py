@@ -35,10 +35,10 @@ num_test_steps = num_test_batches * num_epochs
 
 test_split_ratio = 0.1
 
-lr = 5e-5
+lr = 3e-5
 weight_decay=0.01
 scheduler_type = 'linear'
-num_warmup_steps = int(0.01 * num_train_steps)
+num_warmup_steps = int(0.1 * num_train_steps)
 
 global_attention_mapping = 'none'
 

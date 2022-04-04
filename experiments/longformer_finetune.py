@@ -12,7 +12,7 @@ from accelerate import Accelerator
 import torch
 from torch.utils.data import DataLoader
 
-from transformers import LongformerTokenizerFast, LongformerForSequenceClassification, LongformerConfig, get_scheduler, logging
+from transformers import LongformerTokenizerFast, LongformerForSequenceClassification, LongformerConfig, get_scheduler, get_cosine_schedule_with_warmup
 
 from datasets import Features, Value, ClassLabel, load_dataset, load_from_disk
 
@@ -112,8 +112,7 @@ if __name__ == '__main__':
     progress_bar = tqdm(range(num_training_steps))
 
     # Scheduler for dynamic learning rate.
-    lr_scheduler = get_scheduler(
-        config.scheduler_type,
+    lr_scheduler = get_cosine_schedule_with_warmup(
         optimizer=optimizer,
         num_warmup_steps=config.num_warmup_steps,
         num_training_steps=num_training_steps
