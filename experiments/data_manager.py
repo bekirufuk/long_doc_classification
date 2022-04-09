@@ -2,8 +2,11 @@ import os, glob
 import pandas as pd
 import datetime
 import config
-from datasets import Dataset
-from transformers import LongformerTokenizerFast
+import collections
+from tqdm.auto import tqdm
+from collections import Counter
+from datasets import Dataset, load_from_disk
+from transformers import LongformerTokenizer, BigBirdTokenizer, BertTokenizer, LongformerTokenizerFast
 
 # Merges Detailed ddescription files of patents with therir class info. Then chunks them into .csv files.
 class Manager():
@@ -136,9 +139,29 @@ class Manager():
         chunk = groups.apply(lambda x: x.sample(groups.size().min()).reset_index(drop=True))
         return chunk
 
+    def load_tokenized_data(self):
+        return load_from_disk(os.path.join(self.data_dir, "tokenized/"))
 
-def manage():
-    manager = Manager()
+    def create_vocab(self):
+        counter = collections.Counter()
+        files = self.read_chunk_files()
+        progress_bar = tqdm(range(len(files)))
+        tokenizer_bert = BertTokenizer.from_pretrained('bert-base-uncased')
+        for file in files:
+            df = pd.read_csv(file)
+            df['text'].apply(lambda x: counter.update(Counter(tokenizer_bert.tokenize(x))))
+            progress_bar.update(1)
+            
+        df = pd.DataFrame(columns=['word','freq'])
+        df['word'] = counter.keys()
+        df['freq'] = counter.values()
+        df.to_csv(os.path.join(self.data_dir, "meta/vocab.csv"), index=None)
+
+    def get_vocab_stats(self):
+        file = os.path.join(self.data_dir, 'meta/vocab.csv')
+        df = pd.read_csv(file)
+        print(df)
+def merge(manager):
     tokenizer = LongformerTokenizerFast.from_pretrained('allenai/longformer-base-4096', max_length=config.max_length)
     print("\n----------\n DATA MERGE STARTED \n----------\n")
     ipcr = manager.load_ipcr()
@@ -155,4 +178,41 @@ def manage():
     manager.finish()
     print("\n----------\n DATA MERGE FINISHED \n----------\n")
 
-manage()
+def tokenizer_comparison():
+    tokenizer_longformer = LongformerTokenizer.from_pretrained('allenai/longformer-base-4096', max_length=config.max_length)
+    tokenizer_bigbird = BigBirdTokenizer.from_pretrained('google/bigbird-roberta-base')
+    tokenizer_bert = BertTokenizer.from_pretrained('bert-base-uncased')
+
+    file = os.path.join(config.data_dir, 'chunks\patents_2020_chunk_000008.csv')
+    df = pd.read_csv(file)
+
+    print('\nLongformer: \n', tokenizer_longformer.tokenize(df['text'][0][:300]))
+    print('\nBigbird: \n', tokenizer_bigbird.tokenize(df['text'][0][:300]))
+    print('\nBERT: \n', tokenizer_bert.tokenize(df['text'][0][:300]) )
+
+def fast_comparison():
+    fast = LongformerTokenizerFast.from_pretrained('allenai/longformer-base-4096', max_length=config.max_length)
+    standard = LongformerTokenizer.from_pretrained('allenai/longformer-base-4096', max_length=config.max_length)
+
+    file = os.path.join(config.data_dir, 'chunks\patents_2020_chunk_000008.csv')
+    df = pd.read_csv(file)
+
+    print('\n Fast: \n', fast.tokenize(df['text'][0][:300]))
+    print('\n Standard: \n', standard.tokenize(df['text'][0][:300]))
+
+def token_length_difference_checker():
+    tokenizer_bert = BertTokenizer.from_pretrained('bert-base-uncased')
+    file_counter = 0
+    total_dif = 0
+    files = glob.glob('data/patentsview/chunks/*csv')
+    for file in files:
+        df = pd.read_csv(file)
+        splitted = df['text'].apply(lambda x: len(x.split()))
+        bert_tokenized = df['text'].apply(lambda x: len( tokenizer_bert.tokenize(x)))
+        print('\n splitted: ', sum(splitted)/len(splitted))
+        print('\n BERT: ', sum(bert_tokenized)/len(bert_tokenized))
+        break
+
+if __name__ == '__main__':
+    manager = Manager()
+    manager.get_vocab_stats()
