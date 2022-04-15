@@ -20,12 +20,13 @@ save_model = False
 load_local_checkpoint = False
 
 # Training parameters.
+initial_step = 0 # Increase it for a checkpoint.
 num_epochs = 5
 batch_size = 8
 
 downsample = True
-num_train_samples = 20000
-num_test_samples = 3200
+num_train_samples = 10000
+num_test_samples = 2000
 
 num_train_batches = (num_train_samples / batch_size)
 num_test_batches = (num_test_samples / batch_size)
@@ -37,7 +38,7 @@ test_split_ratio = 0.1
 
 lr = 3e-5
 weight_decay=0.01
-scheduler_type = 'linear'
+scheduler_type = 'cosine'
 num_warmup_steps = int(0.1 * num_train_steps)
 
 global_attention_mapping = 'none'
