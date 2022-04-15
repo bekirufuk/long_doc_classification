@@ -1,7 +1,10 @@
 import os, glob
 import pandas as pd
+import numpy as np
+
 import datetime
 import config
+import nltk
 import collections
 from tqdm.auto import tqdm
 from collections import Counter
@@ -129,12 +132,9 @@ class Manager():
     def tokenize(self, dataset, tokenizer):
         return dataset.map(self.batch_tokenizer, batched=True, remove_columns=['patent_id','text','label','ipc_class','subclass'], fn_kwargs= {"tokenizer":tokenizer})
 
-    def special_sampling(self, chunk, tokenizer):
-        dataset = Dataset.from_pandas(chunk)
-        tokenized_dataset = self.tokenize(dataset, tokenizer)
-        token_lengths = pd.Series(tokenized_dataset['input_ids']).apply(lambda x: len(x))
-        chunk['token_length'] = token_lengths
-        chunk = chunk[(chunk['token_length']>=512) & (chunk['token_length']<=4094)].reset_index(drop=True)
+    def special_sampling(self, chunk):
+        word_counts = chunk['text'].apply(nltk.word_tokenize).apply(lambda x: len(x))
+        chunk = chunk[(word_counts>=512) & (word_counts<=4094)].reset_index(drop=True)
         groups = chunk.groupby('label')
         chunk = groups.apply(lambda x: x.sample(groups.size().min()).reset_index(drop=True))
         return chunk
@@ -142,27 +142,7 @@ class Manager():
     def load_tokenized_data(self):
         return load_from_disk(os.path.join(self.data_dir, "tokenized/"))
 
-    def create_vocab(self):
-        counter = collections.Counter()
-        files = self.read_chunk_files()
-        progress_bar = tqdm(range(len(files)))
-        tokenizer_bert = BertTokenizer.from_pretrained('bert-base-uncased')
-        for file in files:
-            df = pd.read_csv(file)
-            df['text'].apply(lambda x: counter.update(Counter(tokenizer_bert.tokenize(x))))
-            progress_bar.update(1)
-            
-        df = pd.DataFrame(columns=['word','freq'])
-        df['word'] = counter.keys()
-        df['freq'] = counter.values()
-        df.to_csv(os.path.join(self.data_dir, "meta/vocab.csv"), index=None)
-
-    def get_vocab_stats(self):
-        file = os.path.join(self.data_dir, 'meta/vocab.csv')
-        df = pd.read_csv(file)
-        print(df)
 def merge(manager):
-    tokenizer = LongformerTokenizerFast.from_pretrained('allenai/longformer-base-4096', max_length=config.max_length)
     print("\n----------\n DATA MERGE STARTED \n----------\n")
     ipcr = manager.load_ipcr()
     patent_file_list = manager.get_patents_list()
@@ -173,7 +153,7 @@ def merge(manager):
         for chunk in chunks:
             chunk_counter += 1
             chunk = manager.merge_chunk(chunk, ipcr, patent_file_counter+1, chunk_counter)
-            chunk = manager.special_sampling(chunk, tokenizer)
+            chunk = manager.special_sampling(chunk)
             manager.write_chunk(chunk, patent_year, chunk_counter)
     manager.finish()
     print("\n----------\n DATA MERGE FINISHED \n----------\n")
@@ -189,6 +169,7 @@ def tokenizer_comparison():
     print('\nLongformer: \n', tokenizer_longformer.tokenize(df['text'][0][:300]))
     print('\nBigbird: \n', tokenizer_bigbird.tokenize(df['text'][0][:300]))
     print('\nBERT: \n', tokenizer_bert.tokenize(df['text'][0][:300]) )
+    print('\nNLTK: \n', nltk.word_tokenize(df['text'][0][:300]))
 
 def fast_comparison():
     fast = LongformerTokenizerFast.from_pretrained('allenai/longformer-base-4096', max_length=config.max_length)
@@ -197,22 +178,18 @@ def fast_comparison():
     file = os.path.join(config.data_dir, 'chunks\patents_2020_chunk_000008.csv')
     df = pd.read_csv(file)
 
-    print('\n Fast: \n', fast.tokenize(df['text'][0][:300]))
-    print('\n Standard: \n', standard.tokenize(df['text'][0][:300]))
+    print('\nLongformer Fast: \n', fast.tokenize(df['text'][0][:300]))
+    print('\nLongformer Standard: \n', standard.tokenize(df['text'][0][:300]))
 
 def token_length_difference_checker():
     tokenizer_bert = BertTokenizer.from_pretrained('bert-base-uncased')
-    file_counter = 0
-    total_dif = 0
     files = glob.glob('data/patentsview/chunks/*csv')
-    for file in files:
+    for file in files[:3]:
         df = pd.read_csv(file)
         splitted = df['text'].apply(lambda x: len(x.split()))
         bert_tokenized = df['text'].apply(lambda x: len( tokenizer_bert.tokenize(x)))
-        print('\n splitted: ', sum(splitted)/len(splitted))
+        print('\n Split: ', sum(splitted)/len(splitted))
         print('\n BERT: ', sum(bert_tokenized)/len(bert_tokenized))
-        break
 
 if __name__ == '__main__':
     manager = Manager()
-    manager.get_vocab_stats()
