@@ -58,6 +58,16 @@ def save_tokenized_data():
     print("Saving tokenized data...")
     tokenized_data.save_to_disk(os.path.join(config.data_dir, "tokenized/"))
 
+def get_model():
+    if config.load_local_checkpoint:
+        model = LongformerForSequenceClassification.from_pretrained(os.path.join(config.root_dir,"models/{}".format(config.model_name)))
+    else:
+        # Utilize the model with custom config file specifiyng classification labels.
+        longformer_config = LongformerConfig.from_json_file(os.path.join(config.root_dir, 'longformer_config.json'))
+        model = LongformerForSequenceClassification.from_pretrained('allenai/longformer-base-4096',
+            config=longformer_config
+        )
+    return model
 
 # Trim and partition the dataset based on sample sizes.
 def get_partitions():
@@ -93,11 +103,7 @@ if __name__ == '__main__':
     train_dataloader = DataLoader(train_data, batch_size=config.batch_size)
     test_dataloader = DataLoader(test_data, batch_size=config.batch_size)
 
-    # Utilize the model with custom config file specifiyng classification labels.
-    longformer_config = LongformerConfig.from_json_file(os.path.join(config.root_dir, 'longformer_config.json'))
-    model = LongformerForSequenceClassification.from_pretrained('allenai/longformer-base-4096',
-        config=longformer_config
-    )
+    model = get_model()
     model.gradient_checkpointing_enable()
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
@@ -124,7 +130,7 @@ if __name__ == '__main__':
     # Start the logger
     model.train()
     print("\n----------\n TRAINING STARTED \n----------\n")
-    step_counter=0
+    step_counter=config.initial_step
     for epoch in range(config.num_epochs):
         for batch_id, batch in enumerate(train_dataloader):
             outputs = model(**batch, global_attention_mask=global_attention_mask)
@@ -136,6 +142,9 @@ if __name__ == '__main__':
                 predictions = torch.argmax(logits, dim=-1)
                 batch_result = utils.compute_metrics(predictions=predictions.cpu(), references=batch["labels"].cpu())['accuracy']
                 wandb.log({"Training Loss": loss, "Training Accuracy":batch_result})
+
+                if step_counter % (config.log_interval*20) == 0 and step_counter != config.initial_step:
+                    model.save_pretrained(os.path.join(config.root_dir,"models/{}_{}".format(config.log_name,step_counter)))
 
             optimizer.step()
             lr_scheduler.step()
