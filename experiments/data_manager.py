@@ -1,13 +1,16 @@
 import os, glob
+import datetime
+import json
+from tkinter.ttk import Progressbar
+import config
 import pandas as pd
 import numpy as np
-
-import datetime
-import config
-import nltk
-import collections
 from tqdm.auto import tqdm
-from collections import Counter
+
+import pickle
+import nltk
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from scipy.sparse.csr import csr_matrix
 from datasets import Dataset, load_from_disk
 from transformers import LongformerTokenizer, BigBirdTokenizer, BertTokenizer, LongformerTokenizerFast
 
@@ -142,6 +145,93 @@ class Manager():
     def load_tokenized_data(self):
         return load_from_disk(os.path.join(self.data_dir, "tokenized/"))
 
+    def read_chunks(self, limit=None):
+        print('Reading chunk files...')
+        files = self.read_chunk_files()
+        if limit is not None:
+            files = files[:limit]
+        df = pd.DataFrame()
+        prog_bar = tqdm(files)
+        for file in files:
+            chunk = pd.read_csv(file)
+            df = pd.concat([df,chunk])
+            prog_bar.update(1)
+        return df
+
+    def create_word_freqs(self):
+        df = self.read_chunks()
+        words_list = self.get_words_list()
+        count_vectorizer = CountVectorizer(tokenizer=nltk.word_tokenize,
+                                            strip_accents='unicode',
+                                            vocabulary=words_list,
+                                            )
+        print('Fitting the count vectorizer...')
+        count_vectors= count_vectorizer.fit_transform(tqdm(df['text']))
+
+        words_list = count_vectorizer.get_feature_names_out()
+        counts_list = np.asarray(count_vectors.sum(axis=0))[0]
+
+        word_freqs = dict(zip(words_list, counts_list))
+
+        #Remove zero frequent words
+        word_freqs = {word:count for word,count in word_freqs.items() if count!=0}
+        print('Fitting done. Saving the word frequencies as pickle.')
+
+        save_dir = os.path.join(self.data_dir, 'meta')
+        pickle.dump(word_freqs, open(os.path.join(save_dir,'word_freqs.pkl'), "wb"))
+
+    def read_word_freqs_file(self):
+        word_freqs = os.path.join(self.data_dir,'meta/word_freqs.pkl')
+        return pd.read_pickle(word_freqs)
+
+    def get_word_freqs(self, remove_stopwords=False):
+        word_freqs = self.read_word_freqs_file()
+        if remove_stopwords:
+            stopwords = nltk.corpus.stopwords.words('english')
+            word_freqs = {word:count for word,count in word_freqs.items() if word not in stopwords}
+        word_freqs = sorted(word_freqs.items(), key=lambda x: x[1])
+        print('\nTotal {} words in the vocab.'.format(len(word_freqs)))
+        print('\nMost frequent 20 words are:\n{}'.format(word_freqs[-20:]))
+        print('\nLeast frequent 20 words are:\n{}'.format(word_freqs[:20]))
+
+    def create_tfidf(self):
+        df = self.read_chunks()
+        words_list = self.get_words_list()
+        tfidf_vectorizer = TfidfVectorizer(tokenizer=nltk.word_tokenize,
+                                            strip_accents='unicode',
+                                            vocabulary=words_list,
+                                            )
+        print('Fitting the tfidf vectorizer...')
+        tfidf_vectors= tfidf_vectorizer.fit_transform(tqdm(df['text']))
+        save_dir = os.path.join(self.data_dir, 'meta')
+        pickle.dump(tfidf_vectors, open(os.path.join(save_dir,'tfidf_sparse.pkl'), "wb"))
+        pickle.dump(tfidf_vectorizer.get_feature_names_out(), open(os.path.join(save_dir,'tfidf_feature_names.pkl'), "wb"))
+
+    def create_term_doc_martrix(self):
+        df = self.read_chunks()
+        words_list = self.get_words_list()
+        count_vectorizer = CountVectorizer(tokenizer=nltk.word_tokenize,
+                                            strip_accents='unicode',
+                                            vocabulary=words_list,
+                                            )
+        print('Fitting the count vectorizer...')
+        count_vectors= count_vectorizer.fit_transform(tqdm(df['text']))
+        save_dir = os.path.join(self.data_dir, 'meta')
+        pickle.dump(count_vectors, open(os.path.join(save_dir,'term_doc_martrix_sparse.pkl'), "wb"))
+        pickle.dump(count_vectorizer.get_feature_names_out(), open(os.path.join(save_dir,'term_doc_martrix_feature_names.pkl'), "wb"))
+
+    def create_words_list(self):
+        save_dir = os.path.join(self.data_dir, 'meta')
+        print('Deduplicating the vocab...')
+        words_list = list(map(lambda x: x.lower(), nltk.corpus.words.words()))
+        ulist = []
+        [ulist.append(x) for x in words_list if x not in ulist]
+        pickle.dump(ulist, open(os.path.join(save_dir,'words_list.pkl'), "wb"))
+
+    def get_words_list(self):
+        return pd.read_pickle(os.path.join(self.data_dir,'meta/words_list.pkl'))
+
+
 def merge(manager):
     print("\n----------\n DATA MERGE STARTED \n----------\n")
     ipcr = manager.load_ipcr()
@@ -191,5 +281,8 @@ def token_length_difference_checker():
         print('\n Split: ', sum(splitted)/len(splitted))
         print('\n BERT: ', sum(bert_tokenized)/len(bert_tokenized))
 
+# patent_id,text,label
 if __name__ == '__main__':
     manager = Manager()
+    manager.create_tfidf()
+    manager.create_term_doc_martrix()
