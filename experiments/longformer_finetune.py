@@ -145,7 +145,7 @@ if __name__ == '__main__':
 
                 if step_counter % (config.log_interval*20) == 0 and step_counter != config.initial_step:
                     model.save_pretrained(os.path.join(config.root_dir,"models/{}_{}".format(config.log_name,step_counter)))
-
+                        
             optimizer.step()
             lr_scheduler.step()
             optimizer.zero_grad()
@@ -180,7 +180,3 @@ if __name__ == '__main__':
     print("\n----------\n EVALUATION FINISHED \n----------\n")
 
     print("Mean of {} batches F1: {}".format(num_test_steps,mean_f1))
-
-    if config.save_model:
-        model.save_pretrained(os.path.join(config.root_dir,"models/{0}".format(config.model_name)))
-        print("Finetuned model saved.")
