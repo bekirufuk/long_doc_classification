@@ -10,7 +10,6 @@ from tqdm.auto import tqdm
 import pickle
 import nltk
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
-from scipy.sparse.csr import csr_matrix
 from datasets import Dataset, load_from_disk
 from transformers import LongformerTokenizer, BigBirdTokenizer, BertTokenizer, LongformerTokenizerFast
 
@@ -154,7 +153,7 @@ class Manager():
         prog_bar = tqdm(files)
         for file in files:
             chunk = pd.read_csv(file)
-            df = pd.concat([df,chunk])
+            df = pd.concat([df,chunk], ignore_index=True)
             prog_bar.update(1)
         return df
 
@@ -195,19 +194,21 @@ class Manager():
         print('\nLeast frequent 20 words are:\n{}'.format(word_freqs[:20]))
 
     def create_tfidf(self):
+        # tokenizer = nltk.word_tokenize
+        tokenizer = LongformerTokenizerFast.from_pretrained('allenai/longformer-base-4096', max_length=config.max_length)
         df = self.read_chunks()
         words_list = self.get_words_list()
-        tfidf_vectorizer = TfidfVectorizer(tokenizer=nltk.word_tokenize,
+        tfidf_vectorizer = TfidfVectorizer(tokenizer=tokenizer,
                                             strip_accents='unicode',
                                             vocabulary=words_list,
                                             )
         print('Fitting the tfidf vectorizer...')
         tfidf_vectors= tfidf_vectorizer.fit_transform(tqdm(df['text']))
         save_dir = os.path.join(self.data_dir, 'meta')
-        pickle.dump(tfidf_vectors, open(os.path.join(save_dir,'tfidf_sparse.pkl'), "wb"))
-        pickle.dump(tfidf_vectorizer.get_feature_names_out(), open(os.path.join(save_dir,'tfidf_feature_names.pkl'), "wb"))
+        pickle.dump(tfidf_vectors, open(os.path.join(save_dir,'longformer_tokens_tfidf_sparse.pkl'), "wb"))
+        pickle.dump(tfidf_vectorizer.get_feature_names_out(), open(os.path.join(save_dir,'longformer_tokens_tfidf_feature_names.pkl'), "wb"))
 
-    def create_term_doc_martrix(self):
+    def create_term_doc_matrix(self):
         df = self.read_chunks()
         words_list = self.get_words_list()
         count_vectorizer = CountVectorizer(tokenizer=nltk.word_tokenize,
@@ -217,8 +218,8 @@ class Manager():
         print('Fitting the count vectorizer...')
         count_vectors= count_vectorizer.fit_transform(tqdm(df['text']))
         save_dir = os.path.join(self.data_dir, 'meta')
-        pickle.dump(count_vectors, open(os.path.join(save_dir,'term_doc_martrix_sparse.pkl'), "wb"))
-        pickle.dump(count_vectorizer.get_feature_names_out(), open(os.path.join(save_dir,'term_doc_martrix_feature_names.pkl'), "wb"))
+        pickle.dump(count_vectors, open(os.path.join(save_dir,'term_doc_matrix_sparse.pkl'), "wb"))
+        pickle.dump(count_vectorizer.get_feature_names_out(), open(os.path.join(save_dir,'term_doc_matrix_feature_names.pkl'), "wb"))
 
     def create_words_list(self):
         save_dir = os.path.join(self.data_dir, 'meta')
@@ -231,6 +232,18 @@ class Manager():
     def get_words_list(self):
         return pd.read_pickle(os.path.join(self.data_dir,'meta/words_list.pkl'))
 
+    def create_doc_stats(self):
+        file_dir_doc_term = os.path.join(manager.data_dir, 'meta/term_doc_matrix_sparse.pkl')       
+        doc_term = pd.read_pickle(file_dir_doc_term)
+
+        df = self.read_chunks()
+
+        for i in tqdm(range(doc_term.shape[0])):
+            doc = np.array(doc_term[i].toarray()[0])
+            df.loc[i, ['word_count', 'u_word_count']] = [doc[doc!=0].sum(), len(doc[doc!=0])]
+        
+        save_dir = os.path.join(self.data_dir, 'meta/doc_word_stats.csv')
+        df.to_csv(save_dir, index=None)
 
 def merge(manager):
     print("\n----------\n DATA MERGE STARTED \n----------\n")
@@ -281,8 +294,25 @@ def token_length_difference_checker():
         print('\n Split: ', sum(splitted)/len(splitted))
         print('\n BERT: ', sum(bert_tokenized)/len(bert_tokenized))
 
-# patent_id,text,label
+def print_word_stats():
+    chunks = manager.read_chunks(2)
+    chunks['text'] = [chunk.lower() for chunk in chunks['text']]
+    df = pd.DataFrame(columns=['word_count', 'u_word_count'])
+
+    for i in tqdm(range(chunks.shape[0])):
+        words = nltk.word_tokenize(chunks.loc[i,'text'])
+        u_words = []
+        [u_words.append(word) for word in words if word not in u_words ]
+        df.loc[i] = [len(words), len(u_words)]
+    save_dir = os.path.join(manager.data_dir, 'meta/doc_word_stats.csv')
+    df.to_csv(save_dir, index=None)
+    print('Total Words:')
+    print('Min:{}, Max:{} Avg:{}'.format(df['word_count'].min(), df['word_count'].max(), df['word_count'].mean()))
+
+    print('\nUnique Words:')
+    print('Min:{}, Max:{} Avg:{}'.format(df['u_word_count'].min(), df['u_word_count'].max(), df['u_word_count'].mean()))
+
 if __name__ == '__main__':
     manager = Manager()
     manager.create_tfidf()
-    manager.create_term_doc_martrix()
+
