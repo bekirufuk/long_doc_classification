@@ -24,7 +24,7 @@ def batch_tokenizer(batch, tokenizer):
 def get_tokenized_data():
     if config.load_saved_tokens:
         print("Using tokenized data...")
-        tokenized_data = load_from_disk(os.path.join(config.data_dir, "tokenized/"))
+        tokenized_data = load_from_disk(os.path.join(config.data_dir, "longformer_tokenized/"))
     else:
         print("Loading dataset from csv to be tokenized...")
         
@@ -45,7 +45,8 @@ def get_tokenized_data():
 
         # Utilize the tokenizer and run it on the dataset with batching.
         print("Tokenization Started...")
-        tokenizer = LongformerTokenizerFast.from_pretrained('allenai/longformer-base-4096', max_length=config.max_length)
+        #tokenizer = LongformerTokenizerFast.from_pretrained('allenai/longformer-base-4096', max_length=config.max_length)
+        
         tokenized_data = dataset.map(batch_tokenizer, batched=True, remove_columns=['text'], fn_kwargs= {"tokenizer":tokenizer})
         tokenized_data = tokenized_data.rename_column("label","labels")
         print("Tokenization Completed")
@@ -98,10 +99,12 @@ if __name__ == '__main__':
         save_tokenized_data()
 
     train_data, test_data = get_partitions()
+    del tokenized_data
 
     # Dataloaders for PyTorch implementation. Since the dataset already shuffled, no extra shuffle here.
     train_dataloader = DataLoader(train_data, batch_size=config.batch_size)
     test_dataloader = DataLoader(test_data, batch_size=config.batch_size)
+    del train_data, test_data
 
     model = get_model()
     model.gradient_checkpointing_enable()
@@ -123,9 +126,10 @@ if __name__ == '__main__':
         num_warmup_steps=config.num_warmup_steps,
         num_training_steps=num_training_steps
     )
-    
-    # Construct a global_attention_mask to decide which tokens will have glabal attention.
-    global_attention_mask = utils.attention_mapper(device)
+
+    # REad the TF-IDF info in order to create a global attention map from it.
+    f_names = pd.read_pickle('data/patentsview/meta/longformer_tokens_tfidf_feature_names.pkl')
+    tfidf = pd.read_pickle('data/patentsview/meta/longformer_tokens_tfidf_sparse.pkl')
 
     # Start the logger
     model.train()
@@ -133,7 +137,15 @@ if __name__ == '__main__':
     step_counter=config.initial_step
     for epoch in range(config.num_epochs):
         for batch_id, batch in enumerate(train_dataloader):
+            # Construct a global_attention_mask to decide which tokens will have glabal attention.
+            global_attention_mask = utils.attention_mapper(device,
+                                                            batch['input_ids'],
+                                                            f_names,
+                                                            tfidf[config.batch_size*batch_id:(config.batch_size*batch_id)+config.batch_size],
+                                                            )
+
             outputs = model(**batch, global_attention_mask=global_attention_mask)
+          
             loss = outputs.loss
             accelerator.backward(loss)
 
@@ -145,7 +157,7 @@ if __name__ == '__main__':
 
                 if step_counter % (config.log_interval*20) == 0 and step_counter != config.initial_step:
                     model.save_pretrained(os.path.join(config.root_dir,"models/{}_{}".format(config.log_name,step_counter)))
-                        
+
             optimizer.step()
             lr_scheduler.step()
             optimizer.zero_grad()
@@ -159,24 +171,42 @@ if __name__ == '__main__':
     model.eval()
     print("\n----------\n EVALUATION STARTED \n----------\n")
     running_acc = 0
+    running_f1 = 0
+    running_pre = 0
+    running_rec = 0
+
     for batch_id, batch in enumerate(test_dataloader):
         batch = {k: v.to(device) for k, v in batch.items()}
         with torch.no_grad():
+            global_attention_mask = utils.attention_mapper(device,
+                                                            batch['input_ids'],
+                                                            f_names,
+                                                            tfidf[int(config.num_train_samples+config.batch_size*batch_id):int(config.num_train_samples+(config.batch_size*batch_id)+config.batch_size)],
+                                                            )
             outputs = model(**batch, global_attention_mask=global_attention_mask)
 
         logits = outputs.logits
         predictions = torch.argmax(logits, dim=-1)
 
         batch_result = utils.compute_metrics(predictions=predictions.cpu(), references=batch["labels"].cpu())
-        running_acc += batch_result['f1']
+        running_acc += batch_result['acc']
+        running_f1 += batch_result['f1']
+        running_pre += batch_result['precision']
+        running_rec += batch_result['recall']
         progress_bar.update(1)
 
         wandb.log({"Test Loss": outputs.loss,
                 "Test Accuracy":batch_result['accuracy'],
                 "Test F1":batch_result['f1'],
                 })
-    mean_f1 = running_acc/num_test_steps
+    mean_f1 = running_f1/num_test_steps
+    mean_acc = running_acc/num_test_steps
+    mean_rec = running_rec/num_test_steps
+    mean_pre = running_pre/num_test_steps
     wandb.log({"Test Mean-F1":mean_f1})
+    wandb.log({"Test Mean-Acc":mean_acc})
+    wandb.log({"Test Mean-Recall":mean_rec})
+    wandb.log({"Test Mean-Precision":mean_pre})
     print("\n----------\n EVALUATION FINISHED \n----------\n")
 
     print("Mean of {} batches F1: {}".format(num_test_steps,mean_f1))
