@@ -14,9 +14,8 @@ label2id = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4, "F": 5, "G": 6, "H": 7}
 id2label =  {0: "A", 1: "B", 2: "C", 3: "D", 4: "E", 5: "F", 6: "G", 7: "H"}
 labels_list = ["A","B","C","D","E","F","G","H"]
 num_labels = 8
-model_name="no_global_balanced_medium"
+model_name="longformer_with_tfidf_balanced_nltk_definitive"
 
-save_model = False
 load_local_checkpoint = False
 
 # Training parameters.
@@ -25,8 +24,8 @@ num_epochs = 5
 batch_size = 8
 
 downsample = True
-num_train_samples = 10000
-num_test_samples = 2000
+num_train_samples = 20000
+num_test_samples = 3200
 
 num_train_batches = (num_train_samples / batch_size)
 num_test_batches = (num_test_samples / batch_size)
@@ -41,7 +40,7 @@ weight_decay=0.01
 scheduler_type = 'cosine'
 num_warmup_steps = int(0.1 * num_train_steps)
 
-global_attention_mapping = 'none'
+global_attention_mapping = 'tfidf'
 
 # Tokenizer parameters.
 max_length = 4096 #16384
@@ -86,7 +85,7 @@ wandb_config = dict(
     global_attention_mapping = global_attention_mapping,
 
     model = model_name,
-    dataset = 'balanced_trimmed',
+    dataset = 'balanced_trimmed_200K',
     input_size = max_length,
     classes = num_labels,
     log_interval = log_interval,
