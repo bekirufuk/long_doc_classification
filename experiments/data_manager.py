@@ -1,6 +1,6 @@
 import os, glob
 import datetime
-import json
+import sys
 from tkinter.ttk import Progressbar
 import config
 import pandas as pd
@@ -194,19 +194,29 @@ class Manager():
         print('\nLeast frequent 20 words are:\n{}'.format(word_freqs[:20]))
 
     def create_tfidf(self):
-        # tokenizer = nltk.word_tokenize
-        tokenizer = LongformerTokenizerFast.from_pretrained('allenai/longformer-base-4096', max_length=config.max_length)
-        df = self.read_chunks()
-        words_list = self.get_words_list()
-        tfidf_vectorizer = TfidfVectorizer(tokenizer=tokenizer,
-                                            strip_accents='unicode',
-                                            vocabulary=words_list,
-                                            )
+        print('Loading tokenized data...')
+        tokenized_data = load_from_disk(os.path.join(config.data_dir, "longformer_tokenized/"))
+        print('Tokenized data loaded.')
+
+        print('Preprocessing the text for tf-idf...')
+        df_train = pd.DataFrame(columns=['text'])
+        df_train['text'] = [' '.join([str(word) for word in doc]) for doc in tokenized_data['train']['input_ids']]
+
+        df_test = pd.DataFrame(columns=['text'])
+        df_test['text'] = [' '.join([str(word) for word in doc]) for doc in tokenized_data['test']['input_ids']]
+
+        df = pd.concat([df_train,df_test], ignore_index=True)
+        print('Text preprocessing is complete.')
+        del df_train, df_test
+
+        tfidf_vectorizer = TfidfVectorizer(token_pattern=r"(?u)\b\w+\b") #Token pattern is changed so it would read single digits also.
         print('Fitting the tfidf vectorizer...')
         tfidf_vectors= tfidf_vectorizer.fit_transform(tqdm(df['text']))
+        
         save_dir = os.path.join(self.data_dir, 'meta')
         pickle.dump(tfidf_vectors, open(os.path.join(save_dir,'longformer_tokens_tfidf_sparse.pkl'), "wb"))
         pickle.dump(tfidf_vectorizer.get_feature_names_out(), open(os.path.join(save_dir,'longformer_tokens_tfidf_feature_names.pkl'), "wb"))
+        print('Tf-idf is created and saved as pickle files.')
 
     def create_term_doc_matrix(self):
         df = self.read_chunks()
@@ -312,7 +322,10 @@ def print_word_stats():
     print('\nUnique Words:')
     print('Min:{}, Max:{} Avg:{}'.format(df['u_word_count'].min(), df['u_word_count'].max(), df['u_word_count'].mean()))
 
+
+def batch_tokenizer(batch, tokenizer):
+    return tokenizer(batch["text"])
+    
 if __name__ == '__main__':
     manager = Manager()
     manager.create_tfidf()
-
