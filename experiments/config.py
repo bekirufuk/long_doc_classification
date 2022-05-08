@@ -22,7 +22,7 @@ load_local_checkpoint = False
 # Training parameters.
 initial_step = 0 # Increase it for a checkpoint.
 num_epochs = 5
-batch_size = 4
+batch_size = 8
 
 downsample = True
 num_train_samples = 20000

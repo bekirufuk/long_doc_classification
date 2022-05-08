@@ -48,23 +48,20 @@ def tfidf_attention_mapper(device, global_attention_mask, f_names, tfidf):
     
     return global_attention_mask
 
-def idf_attention_mapper(device, input_ids):
+def idf_attention_mapper(device, input_ids, token_idf):
 
     input_ids = input_ids.to('cpu')
-    token_idf = pd.read_pickle(os.path.join(config.data_dir, 'meta/token_idf.pkl'))
-
     global_attention_mask = torch.zeros(input_ids.shape, dtype=torch.long, device=device)
 
     for i, item in enumerate(input_ids): # For every document(item) in the batch.
 
         global_token_ids = torch.argsort(item.apply_(lambda x: token_idf[str(x)]), dim=0, descending=True)[:128]
-
+        
         # Mark the found indexes as 1, indicating a global connection to the all other tokens in the document.
         global_attention_mask[i][global_token_ids] = 1
 
     # Mark the first token being the <CLS> (noted as <s> in longformer) token of all of the batch as 1 for global connection.
     global_attention_mask[:, 0] = 1
-
     return global_attention_mask
 
 def idf_attention_analyzer(device, input_ids, labels, tokenizer):

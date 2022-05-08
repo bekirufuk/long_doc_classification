@@ -45,8 +45,7 @@ def get_tokenized_data():
 
         # Utilize the tokenizer and run it on the dataset with batching.
         print("Tokenization Started...")
-        #tokenizer = LongformerTokenizerFast.from_pretrained('allenai/longformer-base-4096', max_length=config.max_length)
-        
+        tokenizer = LongformerTokenizerFast.from_pretrained('allenai/longformer-base-4096', max_length=config.max_length)
         tokenized_data = dataset.map(batch_tokenizer, batched=True, remove_columns=['text'], fn_kwargs= {"tokenizer":tokenizer})
         tokenized_data = tokenized_data.rename_column("label","labels")
         print("Tokenization Completed")
@@ -55,7 +54,7 @@ def get_tokenized_data():
     return tokenized_data
 
 # Save tokenized data to be loaded afterwards
-def save_tokenized_data():
+def save_tokenized_data(tokenized_data):
     print("Saving tokenized data...")
     tokenized_data.save_to_disk(os.path.join(config.data_dir, "tokenized/"))
 
@@ -71,7 +70,7 @@ def get_model():
     return model
 
 # Trim and partition the dataset based on sample sizes.
-def get_partitions():
+def get_partitions(tokenized_data):
     if config.downsample:
         train_data = tokenized_data["train"].select(range(config.num_train_samples))
         test_data = tokenized_data["test"].select(range(config.num_test_samples))
@@ -97,9 +96,9 @@ if __name__ == '__main__':
     tokenized_data = get_tokenized_data()
 
     if config.save_tokens and not config.load_saved_tokens:
-        save_tokenized_data()
+        save_tokenized_data(tokenized_data)
 
-    train_data, test_data = get_partitions()
+    train_data, test_data = get_partitions(tokenized_data)
     del tokenized_data
 
     # Dataloaders for PyTorch implementation. Since the dataset already shuffled, no extra shuffle here.
@@ -116,45 +115,39 @@ if __name__ == '__main__':
     train_dataloader, test_dataloader, model, optimizer = accelerator.prepare(
         train_dataloader, test_dataloader, model, optimizer
     )
-    
-    # Epoch times number of batches gives the total step count. Feed it into tqdm for a progress bar with this many steps.
-    num_training_steps = config.num_epochs * len(train_dataloader)
-    progress_bar = tqdm(range(num_training_steps))
 
     # Scheduler for dynamic learning rate.
     lr_scheduler = get_cosine_schedule_with_warmup(
         optimizer=optimizer,
         num_warmup_steps=config.num_warmup_steps,
-        num_training_steps=num_training_steps
+        num_training_steps=config.num_train_steps
     )
 
-    # Read the TF-IDF info in order to create a global attention map from it.
-    f_names = pd.read_pickle('data/patentsview/meta/longformer_tokens_tfidf_feature_names.pkl')
-    tfidf = pd.read_pickle('data/patentsview/meta/longformer_tokens_tfidf_sparse.pkl')
+    token_idf = pd.read_pickle(os.path.join(config.data_dir, 'meta/token_idf.pkl'))
 
     # Start the logger
+    progress_bar = tqdm(range(config.num_train_steps))
     model.train()
     print("\n----------\n TRAINING STARTED \n----------\n")
     step_counter=config.initial_step
     for epoch in range(config.num_epochs):
         for batch_id, batch in enumerate(train_dataloader):
             # Construct a global_attention_mask to decide which tokens will have glabal attention.
-            # Pick a slice of tfidf that matches the documents of the current batch.
-            # Since, they are created from the same tokenized data, tfidf document index and train data document index exactly marches.
-            global_attention_mask = utils.idf_attention_mapper(device,
-                                                            batch['input_ids'],
-                                                            )
-
+            global_attention_mask = utils.idf_attention_mapper(device, batch['input_ids'], token_idf)
+            
             outputs = model(**batch, global_attention_mask=global_attention_mask)
-          
-            loss = outputs.loss
-            accelerator.backward(loss)
+            accelerator.backward(outputs.loss)
 
             if step_counter % config.log_interval == 0:
-                logits = outputs.logits
-                predictions = torch.argmax(logits, dim=-1)
-                batch_result = utils.compute_metrics(predictions=predictions.cpu(), references=batch["labels"].cpu())['accuracy']
-                wandb.log({"Training Loss": loss, "Training Accuracy":batch_result})
+                predictions = torch.argmax(outputs.logits, dim=-1)
+                batch_accuracy = utils.compute_metrics(predictions=predictions.cpu(), references=batch["labels"].cpu())['accuracy']
+                
+                wandb.log({"Training Loss": outputs.loss,
+                           "Training Accuracy":batch_accuracy,
+                           "Epoch":epoch+1,
+                           "Learning Rate": lr_scheduler.get_last_lr()[0],
+                           "Step Count": step_counter
+                           })
 
                 if step_counter % (config.log_interval*20) == 0 and step_counter != config.initial_step:
                     model.save_pretrained(os.path.join(config.root_dir,"models/{}_{}".format(config.log_name,step_counter)))
@@ -167,21 +160,16 @@ if __name__ == '__main__':
     accelerator.free_memory()
     print("\n----------\n TRAINING FINISHED \n----------\n")
 
-    num_test_steps = len(test_dataloader)
-    progress_bar = tqdm(range(num_test_steps))
+    progress_bar = tqdm(range(config.num_test_batches))
     model.eval()
     print("\n----------\n EVALUATION STARTED \n----------\n")
     running_acc = 0
     running_f1 = 0
-    running_pre = 0
-    running_rec = 0
 
     for batch_id, batch in enumerate(test_dataloader):
         batch = {k: v.to(device) for k, v in batch.items()}
         with torch.no_grad():
-            global_attention_mask = utils.idf_attention_mapper(device,
-                                                            batch['input_ids'],
-                                                            )
+            global_attention_mask = utils.idf_attention_mapper(device, batch['input_ids'], token_idf)
             outputs = model(**batch, global_attention_mask=global_attention_mask)
 
         logits = outputs.logits
@@ -190,22 +178,16 @@ if __name__ == '__main__':
         batch_result = utils.compute_metrics(predictions=predictions.cpu(), references=batch["labels"].cpu())
         running_acc += batch_result['accuracy']
         running_f1 += batch_result['f1']
-        running_pre += batch_result['precision']
-        running_rec += batch_result['recall']
         progress_bar.update(1)
 
         wandb.log({"Test Loss": outputs.loss,
-                "Test Accuracy":batch_result['accuracy'],
-                "Test F1":batch_result['f1'],
+                   "Test Accuracy":batch_result['accuracy'],
+                   "Test F1":batch_result['f1'],
+                    })
+
+    wandb.log({"Test Mean-F1":running_f1/config.num_test_batches,
+               "Test Mean-Acc":running_acc/config.num_test_batches,
                 })
-    mean_f1 = running_f1/num_test_steps
-    mean_acc = running_acc/num_test_steps
-    mean_rec = running_rec/num_test_steps
-    mean_pre = running_pre/num_test_steps
-    wandb.log({"Test Mean-F1":mean_f1})
-    wandb.log({"Test Mean-Acc":mean_acc})
-    wandb.log({"Test Mean-Recall":mean_rec})
-    wandb.log({"Test Mean-Precision":mean_pre})
     print("\n----------\n EVALUATION FINISHED \n----------\n")
 
-    print("Mean of {} batches F1: {}".format(num_test_steps,mean_f1))
+    print("Mean of {} batches F1: {}".format(config.num_test_batches, running_f1/config.num_test_batches))
