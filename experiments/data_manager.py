@@ -1,6 +1,7 @@
 import os, glob
 import datetime
 import sys
+from  math import log
 from tkinter.ttk import Progressbar
 import config
 import pandas as pd
@@ -9,7 +10,7 @@ from tqdm.auto import tqdm
 
 import pickle
 import nltk
-from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer, TfidfTransformer
 from datasets import Dataset, load_from_disk
 from transformers import LongformerTokenizer, BigBirdTokenizer, BertTokenizer, LongformerTokenizerFast
 
@@ -193,12 +194,28 @@ class Manager():
         print('\nMost frequent 20 words are:\n{}'.format(word_freqs[-20:]))
         print('\nLeast frequent 20 words are:\n{}'.format(word_freqs[:20]))
 
-    def create_tfidf(self):
+    def create_token_freqs(self):
+        data = self.read_tokenized_data()
+        count_vectorizer = CountVectorizer(token_pattern=r"(?u)\b\w+\b")
+
+        count_vectors= count_vectorizer.fit_transform(tqdm(data))
+        words_list = count_vectorizer.get_feature_names_out()
+        counts_list = np.asarray(count_vectors.sum(axis=0))[0]
+
+        word_freqs = dict(zip(words_list, counts_list))
+
+        word_freqs = {word:count for word,count in word_freqs.items() if count!=0}
+        print('Fitting done. Saving the word frequencies as pickle.')
+
+        save_dir = os.path.join(self.data_dir, 'meta')
+        pickle.dump(word_freqs, open(os.path.join(save_dir,'token_freqs.pkl'), "wb"))
+
+    def read_tokenized_data(self):
         print('Loading tokenized data...')
         tokenized_data = load_from_disk(os.path.join(config.data_dir, "longformer_tokenized/"))
         print('Tokenized data loaded.')
 
-        print('Preprocessing the text for tf-idf...')
+        print('Preprocessing the text...')
         df_train = pd.DataFrame(columns=['text'])
         df_train['text'] = [' '.join([str(word) for word in doc]) for doc in tokenized_data['train']['input_ids']]
 
@@ -207,16 +224,27 @@ class Manager():
 
         df = pd.concat([df_train,df_test], ignore_index=True)
         print('Text preprocessing is complete.')
-        del df_train, df_test
+        return df['text']
 
+    def create_tfidf(self):
+        data = self.read_tokenized_data()
         tfidf_vectorizer = TfidfVectorizer(token_pattern=r"(?u)\b\w+\b") #Token pattern is changed so it would read single digits also.
         print('Fitting the tfidf vectorizer...')
-        tfidf_vectors= tfidf_vectorizer.fit_transform(tqdm(df['text']))
+        tfidf_vectors= tfidf_vectorizer.fit_transform(tqdm(data))
         
         save_dir = os.path.join(self.data_dir, 'meta')
         pickle.dump(tfidf_vectors, open(os.path.join(save_dir,'longformer_tokens_tfidf_sparse.pkl'), "wb"))
         pickle.dump(tfidf_vectorizer.get_feature_names_out(), open(os.path.join(save_dir,'longformer_tokens_tfidf_feature_names.pkl'), "wb"))
         print('Tf-idf is created and saved as pickle files.')
+
+    def create_token_idf(self):
+        N = len(self.read_tokenized_data())
+
+        token_feqs = pd.read_pickle(os.path.join(manager.data_dir, 'meta/token_freqs.pkl'))
+        idf = {k: log(N/v) for k, v in token_feqs.items()}
+
+        save_dir = os.path.join(self.data_dir, 'meta')
+        pickle.dump(idf, open(os.path.join(save_dir,'token_idf.pkl'), "wb"))
 
     def create_term_doc_matrix(self):
         df = self.read_chunks()
@@ -305,7 +333,7 @@ def token_length_difference_checker():
         print('\n BERT: ', sum(bert_tokenized)/len(bert_tokenized))
 
 def print_word_stats():
-    chunks = manager.read_chunks(2)
+    chunks = manager.read_chunks()
     chunks['text'] = [chunk.lower() for chunk in chunks['text']]
     df = pd.DataFrame(columns=['word_count', 'u_word_count'])
 
@@ -328,4 +356,10 @@ def batch_tokenizer(batch, tokenizer):
     
 if __name__ == '__main__':
     manager = Manager()
-    manager.create_tfidf()
+    tokenizer = LongformerTokenizerFast.from_pretrained('allenai/longformer-base-4096', max_length=config.max_length)
+    manager.create_token_freqs()
+    manager.create_token_idf()
+
+    token_freqs = pd.read_pickle(os.path.join(manager.data_dir, 'meta/token_idf.pkl'))
+    token_freqs = dict(sorted(token_freqs.items(), key=lambda item: item[1]))
+    print(tokenizer.convert_ids_to_tokens([v for v in token_freqs.keys()]))

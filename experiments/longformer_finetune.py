@@ -82,6 +82,7 @@ def get_partitions():
 
 if __name__ == '__main__':
     
+    # You might want to change the wandb setings in order to training logger to work properly.
     wandb.init(project="custom_transformers", 
                 entity="bekirufuk", 
                 config=config.wandb_config,
@@ -127,7 +128,7 @@ if __name__ == '__main__':
         num_training_steps=num_training_steps
     )
 
-    # REad the TF-IDF info in order to create a global attention map from it.
+    # Read the TF-IDF info in order to create a global attention map from it.
     f_names = pd.read_pickle('data/patentsview/meta/longformer_tokens_tfidf_feature_names.pkl')
     tfidf = pd.read_pickle('data/patentsview/meta/longformer_tokens_tfidf_sparse.pkl')
 
@@ -138,10 +139,10 @@ if __name__ == '__main__':
     for epoch in range(config.num_epochs):
         for batch_id, batch in enumerate(train_dataloader):
             # Construct a global_attention_mask to decide which tokens will have glabal attention.
-            global_attention_mask = utils.attention_mapper(device,
+            # Pick a slice of tfidf that matches the documents of the current batch.
+            # Since, they are created from the same tokenized data, tfidf document index and train data document index exactly marches.
+            global_attention_mask = utils.idf_attention_mapper(device,
                                                             batch['input_ids'],
-                                                            f_names,
-                                                            tfidf[config.batch_size*batch_id:(config.batch_size*batch_id)+config.batch_size],
                                                             )
 
             outputs = model(**batch, global_attention_mask=global_attention_mask)
@@ -178,10 +179,8 @@ if __name__ == '__main__':
     for batch_id, batch in enumerate(test_dataloader):
         batch = {k: v.to(device) for k, v in batch.items()}
         with torch.no_grad():
-            global_attention_mask = utils.attention_mapper(device,
+            global_attention_mask = utils.idf_attention_mapper(device,
                                                             batch['input_ids'],
-                                                            f_names,
-                                                            tfidf[int(config.num_train_samples+config.batch_size*batch_id):int(config.num_train_samples+(config.batch_size*batch_id)+config.batch_size)],
                                                             )
             outputs = model(**batch, global_attention_mask=global_attention_mask)
 
@@ -189,7 +188,7 @@ if __name__ == '__main__':
         predictions = torch.argmax(logits, dim=-1)
 
         batch_result = utils.compute_metrics(predictions=predictions.cpu(), references=batch["labels"].cpu())
-        running_acc += batch_result['acc']
+        running_acc += batch_result['accuracy']
         running_f1 += batch_result['f1']
         running_pre += batch_result['precision']
         running_rec += batch_result['recall']
