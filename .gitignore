@@ -2,9 +2,7 @@ models/
 logs/
 wandb/
 tests/
-data/patentsview/chunks/*
-data/patentsview/longformer_tokenized/*
-
+data/*
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
