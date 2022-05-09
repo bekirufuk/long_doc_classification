@@ -1,19 +1,21 @@
 import os
-from random import seed
 import sys
 import config, utils
 import pandas as pd
+import numpy as np
+from random import seed
 import wandb
 
-from tqdm.auto import tqdm
-
-from accelerate import Accelerator
+#import plotly.graph_objs as go
+import plotly.express as px
 
 import torch
+from tqdm.auto import tqdm
+from accelerate import Accelerator
 from torch.utils.data import DataLoader
 
-from transformers import LongformerTokenizerFast, LongformerForSequenceClassification, LongformerConfig, get_scheduler, get_cosine_schedule_with_warmup
-
+from sklearn.metrics import confusion_matrix, accuracy_score
+from transformers import LongformerTokenizerFast, LongformerForSequenceClassification, LongformerConfig, get_cosine_schedule_with_warmup
 from datasets import Features, Value, ClassLabel, load_dataset, load_from_disk
 
 
@@ -29,10 +31,14 @@ def get_tokenized_data():
         print("Loading dataset from csv to be tokenized...")
         
         class_names = config.labels_list
-        features = Features({'text': Value('string'), 'label': ClassLabel(names=class_names)})
+        features = Features({'text': Value('string'),
+                             'label': ClassLabel(names=class_names),
+                             'ipc_class': Value('string'),
+                             'subclass': Value('string'),
+                            })
         data_files = os.path.join(config.data_dir, 'chunks/*.csv')
         dataset = load_dataset('csv', data_files=data_files, features=features,
-                                cache_dir=os.path.join(config.data_dir, 'cache/'),
+                                #cache_dir=os.path.join(config.data_dir, 'cache/'),
                                 )
         dataset = dataset['train'].train_test_split(test_size=config.test_split_ratio)
         dataset = dataset.shuffle(seed=config.seed)
@@ -40,13 +46,12 @@ def get_tokenized_data():
         print(dataset)
 
         # Upload to huggingfacehub if True and repo name specified
-        if config.upload_to_hf and config.repo_name != '':
-            dataset.push_to_hub("ufukhaman/uspto_patents_2019", private=True)
-
+        if config.upload_to_hf and config.upload_repo_name != '':
+            dataset.push_to_hub(config.upload_repo_name, private=True)
         # Utilize the tokenizer and run it on the dataset with batching.
         print("Tokenization Started...")
         tokenizer = LongformerTokenizerFast.from_pretrained('allenai/longformer-base-4096', max_length=config.max_length)
-        tokenized_data = dataset.map(batch_tokenizer, batched=True, remove_columns=['text'], fn_kwargs= {"tokenizer":tokenizer})
+        tokenized_data = dataset.map(batch_tokenizer, batched=True, remove_columns=['text', 'ipc_class', 'subclass'], fn_kwargs= {"tokenizer":tokenizer})
         tokenized_data = tokenized_data.rename_column("label","labels")
         print("Tokenization Completed")
 
@@ -56,7 +61,7 @@ def get_tokenized_data():
 # Save tokenized data to be loaded afterwards
 def save_tokenized_data(tokenized_data):
     print("Saving tokenized data...")
-    tokenized_data.save_to_disk(os.path.join(config.data_dir, "tokenized/"))
+    tokenized_data.save_to_disk(os.path.join(config.data_dir, "longformer_tokenized/"))
 
 def get_model():
     if config.load_local_checkpoint:
@@ -79,6 +84,10 @@ def get_partitions(tokenized_data):
         test_data = tokenized_data["test"]
     return train_data, test_data
 
+def empty_confmatrix():
+    return np.zeros((config.num_labels,config.num_labels), dtype=np.int32)
+
+
 if __name__ == '__main__':
     
     # You might want to change the wandb setings in order to training logger to work properly.
@@ -88,7 +97,6 @@ if __name__ == '__main__':
                 job_type='finetuning_test',
                 name=config.log_name,
                 )
-    
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     torch.cuda.empty_cache()
     accelerator = Accelerator(fp16=True)
@@ -109,6 +117,8 @@ if __name__ == '__main__':
     model = get_model()
     model.gradient_checkpointing_enable()
 
+    wandb.watch(model, log="all", log_freq=config.log_interval)
+
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
 
     # Load the data with accelerator for a better GPU performence. No need to send it into the device.
@@ -124,8 +134,8 @@ if __name__ == '__main__':
     )
 
     token_idf = pd.read_pickle(os.path.join(config.data_dir, 'meta/token_idf.pkl'))
+    confmatrix = empty_confmatrix()
 
-    # Start the logger
     progress_bar = tqdm(range(config.num_train_steps))
     model.train()
     print("\n----------\n TRAINING STARTED \n----------\n")
@@ -136,18 +146,30 @@ if __name__ == '__main__':
             global_attention_mask = utils.idf_attention_mapper(device, batch['input_ids'], token_idf)
             
             outputs = model(**batch, global_attention_mask=global_attention_mask)
+            predictions = torch.argmax(outputs.logits, dim=-1)
             accelerator.backward(outputs.loss)
 
+            confmatrix += confusion_matrix(batch["labels"].cpu(), predictions.cpu(), labels=range(config.num_labels))
+
             if step_counter % config.log_interval == 0:
-                predictions = torch.argmax(outputs.logits, dim=-1)
-                batch_accuracy = utils.compute_metrics(predictions=predictions.cpu(), references=batch["labels"].cpu())['accuracy']
                 
+                batch_accuracy = accuracy_score(batch["labels"].cpu(), predictions.cpu())
+
+                fig = px.imshow(confmatrix, text_auto=True, aspect='equal',
+                                color_continuous_scale ='Blues',
+                                x=config.labels_list,
+                                y=config.labels_list,
+                                labels={'x':'Prediction', 'y':'Actual'}
+                                )
+
+                wandb.log({'Training Confusion Matrix': wandb.data_types.Plotly(fig)})
+
                 wandb.log({"Training Loss": outputs.loss,
                            "Training Accuracy":batch_accuracy,
                            "Epoch":epoch+1,
                            "Learning Rate": lr_scheduler.get_last_lr()[0],
-                           "Step Count": step_counter
                            })
+                confmatrix = empty_confmatrix()
 
                 if step_counter % (config.log_interval*20) == 0 and step_counter != config.initial_step:
                     model.save_pretrained(os.path.join(config.root_dir,"models/{}_{}".format(config.log_name,step_counter)))
@@ -160,11 +182,13 @@ if __name__ == '__main__':
     accelerator.free_memory()
     print("\n----------\n TRAINING FINISHED \n----------\n")
 
+    confmatrix = empty_confmatrix()
     progress_bar = tqdm(range(config.num_test_batches))
     model.eval()
     print("\n----------\n EVALUATION STARTED \n----------\n")
-    running_acc = 0
-    running_f1 = 0
+
+    all_predictions = torch.zeros((config.batch_size), device='cpu')
+    all_labels = torch.zeros((config.batch_size), device='cpu')
 
     for batch_id, batch in enumerate(test_dataloader):
         batch = {k: v.to(device) for k, v in batch.items()}
@@ -172,22 +196,27 @@ if __name__ == '__main__':
             global_attention_mask = utils.idf_attention_mapper(device, batch['input_ids'], token_idf)
             outputs = model(**batch, global_attention_mask=global_attention_mask)
 
-        logits = outputs.logits
-        predictions = torch.argmax(logits, dim=-1)
+        predictions = torch.argmax(outputs.logits, dim=-1)
 
-        batch_result = utils.compute_metrics(predictions=predictions.cpu(), references=batch["labels"].cpu())
-        running_acc += batch_result['accuracy']
-        running_f1 += batch_result['f1']
+        all_predictions = torch.cat((all_predictions, predictions.cpu()))
+        all_labels = torch.cat((all_labels, batch['labels'].cpu()))
+
+        confmatrix += confusion_matrix(batch['labels'].cpu(), predictions.cpu(), labels=range(config.num_labels))
+        fig = px.imshow(confmatrix, text_auto=True, aspect='equal',
+                        color_continuous_scale ='Blues',
+                        x=config.labels_list,
+                        y=config.labels_list,
+                        labels={'x':'Prediction', 'y':'Actual'}
+                        )
+        wandb.log({'Test Confusion Matrix': wandb.data_types.Plotly(fig)})
+
         progress_bar.update(1)
 
-        wandb.log({"Test Loss": outputs.loss,
-                   "Test Accuracy":batch_result['accuracy'],
-                   "Test F1":batch_result['f1'],
-                    })
-
-    wandb.log({"Test Mean-F1":running_f1/config.num_test_batches,
-               "Test Mean-Acc":running_acc/config.num_test_batches,
-                })
+    test_results = utils.compute_metrics(predictions=all_predictions, references=all_labels)
+    wandb.log({"Classification Report":test_results['cls_report'],
+               "Test Accuracy":test_results['accuracy'],
+               "Test F1":test_results['f1'],
+               "Test Precision":test_results['precision'],
+               "Test Recall":test_results['recall'],
+             })
     print("\n----------\n EVALUATION FINISHED \n----------\n")
-
-    print("Mean of {} batches F1: {}".format(config.num_test_batches, running_f1/config.num_test_batches))
