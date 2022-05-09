@@ -51,10 +51,10 @@ save_tokens = False
 # Data parameters.
 
 upload_to_hf = False
-upload_repo_name = 'ufukhaman/uspto_patents_2019'
+upload_repo_name = 'ufukhaman/uspto_balanced_200k_ipc_classification'
 
-download_from_hf = False
-download_repo_name = 'ufukhaman/uspto_patents_2019'
+download_from_hf_repo = False
+download_repo_name = 'ufukhaman/uspto_balanced_200k_ipc_classification'
 
 # Logging parameters.
 log_interval = int(num_train_steps/200)
