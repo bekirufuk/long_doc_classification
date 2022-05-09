@@ -135,6 +135,7 @@ if __name__ == '__main__':
 
     token_idf = pd.read_pickle(os.path.join(config.data_dir, 'meta/token_idf.pkl'))
     confmatrix = empty_confmatrix()
+    norm_confmatrix = empty_confmatrix()
 
     progress_bar = tqdm(range(config.num_train_steps))
     model.train()
@@ -150,8 +151,9 @@ if __name__ == '__main__':
             accelerator.backward(outputs.loss)
 
             confmatrix += confusion_matrix(batch["labels"].cpu(), predictions.cpu(), labels=range(config.num_labels))
+            norm_confmatrix += confusion_matrix(batch["labels"].cpu(), predictions.cpu(), labels=range(config.num_labels), normalize='true')
 
-            if step_counter % config.log_interval == 0:
+            if step_counter % config.log_interval == 0 and step_counter != 0:
                 
                 batch_accuracy = accuracy_score(batch["labels"].cpu(), predictions.cpu())
 
@@ -162,7 +164,15 @@ if __name__ == '__main__':
                                 labels={'x':'Prediction', 'y':'Actual'}
                                 )
 
+                norm_fig = px.imshow(norm_confmatrix, text_auto=True, aspect='equal',
+                                color_continuous_scale ='Blues',
+                                x=config.labels_list,
+                                y=config.labels_list,
+                                labels={'x':'Prediction', 'y':'Actual'}
+                                )
+
                 wandb.log({'Training Confusion Matrix': wandb.data_types.Plotly(fig)})
+                wandb.log({'Training Norm Confusion Matrix': wandb.data_types.Plotly(norm_fig)})
 
                 wandb.log({"Training Loss": outputs.loss,
                            "Training Accuracy":batch_accuracy,
@@ -170,6 +180,7 @@ if __name__ == '__main__':
                            "Learning Rate": lr_scheduler.get_last_lr()[0],
                            })
                 confmatrix = empty_confmatrix()
+                norm_confmatrix = empty_confmatrix()
 
                 if step_counter % (config.log_interval*20) == 0 and step_counter != config.initial_step:
                     model.save_pretrained(os.path.join(config.root_dir,"models/{}_{}".format(config.log_name,step_counter)))
@@ -183,6 +194,7 @@ if __name__ == '__main__':
     print("\n----------\n TRAINING FINISHED \n----------\n")
 
     confmatrix = empty_confmatrix()
+    norm_confmatrix = empty_confmatrix()
     progress_bar = tqdm(range(config.num_test_batches))
     model.eval()
     print("\n----------\n EVALUATION STARTED \n----------\n")
@@ -202,13 +214,24 @@ if __name__ == '__main__':
         all_labels = torch.cat((all_labels, batch['labels'].cpu()))
 
         confmatrix += confusion_matrix(batch['labels'].cpu(), predictions.cpu(), labels=range(config.num_labels))
+        norm_confmatrix += confusion_matrix(batch["labels"].cpu(), predictions.cpu(), labels=range(config.num_labels), normalize='true')
+
         fig = px.imshow(confmatrix, text_auto=True, aspect='equal',
                         color_continuous_scale ='Blues',
                         x=config.labels_list,
                         y=config.labels_list,
                         labels={'x':'Prediction', 'y':'Actual'}
                         )
+        
+        norm_fig = px.imshow(norm_confmatrix, text_auto=True, aspect='equal',
+                        color_continuous_scale ='Blues',
+                        x=config.labels_list,
+                        y=config.labels_list,
+                        labels={'x':'Prediction', 'y':'Actual'}
+                        )
+
         wandb.log({'Test Confusion Matrix': wandb.data_types.Plotly(fig)})
+        wandb.log({'Test Confusion Matrix': wandb.data_types.Plotly(norm_fig)})
 
         progress_bar.update(1)
 
