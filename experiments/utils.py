@@ -6,19 +6,28 @@ import torch
 import random
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from sklearn.metrics import f1_score, accuracy_score, precision_recall_fscore_support, classification_report
 
 
 def compute_metrics(predictions, references):
 
-    precision, recall, f1, _ = precision_recall_fscore_support(references, predictions, average='micro')
-    acc = accuracy_score(references, predictions)
-    return {
-        'accuracy': acc,
-        'f1': f1,
-        'precision': precision,
-        'recall': recall
-    }
+    accuracy = accuracy_score(references, predictions)
+
+    cls_report = classification_report(references, predictions,
+                                        labels=range(config.num_labels),
+                                        target_names=config.labels_list,
+                                        output_dict=True,
+                                        zero_division=0,
+                                        )
+
+    precision, recall, f1, _ = precision_recall_fscore_support(references, predictions,
+                                                                labels=range(config.num_labels),
+                                                                average='weighted',
+                                                                zero_division=0
+                                                                )
+    
+    return {'accuracy':accuracy, 'precision':precision, 'recall':recall, 'f1':f1, 'cls_report':cls_report}
+    
 
 def tfidf_attention_mapper(device, global_attention_mask, f_names, tfidf):
     # Function takes input_ids with the name of global_attention_mask.
