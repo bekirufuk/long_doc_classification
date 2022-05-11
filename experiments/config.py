@@ -15,7 +15,7 @@ id2label =  {0: "A", 1: "B", 2: "C", 3: "D", 4: "E", 5: "F", 6: "G", 7: "H"}
 labels_list = ["A","B","C","D","E","F","G","H"]
 num_labels = 8
 model_type = "longformer"
-model_name="Log testing"
+model_name="Longformer_idf_medium_scale"
 
 load_local_checkpoint = False
 
@@ -25,8 +25,8 @@ num_epochs = 5
 batch_size = 8
 
 downsample = True
-num_train_samples = 20000
-num_test_samples = 6400
+num_train_samples = 20000 #8000
+num_test_samples = 3200 #1600
 
 num_train_batches = int(num_train_samples / batch_size)
 num_test_batches = int(num_test_samples / batch_size)

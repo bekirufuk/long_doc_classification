@@ -6,7 +6,7 @@ import torch
 import random
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.metrics import f1_score, accuracy_score, precision_recall_fscore_support, classification_report
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support, classification_report
 
 
 def compute_metrics(predictions, references):
