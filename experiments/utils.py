@@ -101,8 +101,25 @@ def idf_attention_analyzer(device, input_ids, labels, tokenizer):
     global_attention_mask[:, 0] = 1
     global_attention_mask = torch.tensor(global_attention_mask.numpy(), dtype=torch.long, device=device)
 
-
 def visualize_attention_map(map):
+    global_list = np.array(map.cpu())
+    token_len = len(global_list)
+
+    att_window = config.model_config['attention_window'][0]
+
+    s_map = np.zeros((token_len, token_len))
+    
+    for i in range(token_len):
+        if global_list[i] == 1:
+            s_map[i] = 1
+            s_map[:, i] = 1
+    
+    
+
+    plt.imshow(s_map, cmap='Greys')
+    plt.show() 
+
+def _visualize_attention_map(map):
     map_line = np.array(map)
     att_window = config.model_config['attention_window'][0]
 
