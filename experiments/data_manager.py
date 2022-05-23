@@ -248,10 +248,8 @@ class Manager():
 
     def create_term_doc_matrix(self):
         df = self.read_chunks()
-        words_list = self.get_words_list()
         count_vectorizer = CountVectorizer(tokenizer=nltk.word_tokenize,
                                             strip_accents='unicode',
-                                            vocabulary=words_list,
                                             )
         print('Fitting the count vectorizer...')
         count_vectors= count_vectorizer.fit_transform(tqdm(df['text']))
