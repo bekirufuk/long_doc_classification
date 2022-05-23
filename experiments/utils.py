@@ -1,13 +1,20 @@
 import os
 import sys
-import pandas as pd
 import config
-import torch
 import random
-import matplotlib.pyplot as plt
+
 import numpy as np
+import pandas as pd
+import torch
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+from sklearn.manifold import TSNE
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, classification_report
 
+import warnings
+warnings.filterwarnings("ignore")
 
 def compute_metrics(predictions, references):
 
@@ -101,7 +108,8 @@ def idf_attention_analyzer(device, input_ids, labels, tokenizer):
     global_attention_mask[:, 0] = 1
     global_attention_mask = torch.tensor(global_attention_mask.numpy(), dtype=torch.long, device=device)
 
-def visualize_attention_map(map):
+
+def visualize_attention_map(map, step_id):
     global_list = np.array(map.cpu())
     token_len = len(global_list)
 
@@ -114,24 +122,38 @@ def visualize_attention_map(map):
             s_map[i] = 1
             s_map[:, i] = 1
     
-    
+        starting_pos = int(max(i-att_window/2, 0))
+        ending_pos = int(min(i+att_window/2, token_len))
+
+        s_map[i][starting_pos:ending_pos] = 1  
 
     plt.imshow(s_map, cmap='Greys')
-    plt.show() 
+    save_dir = os.path.join(config.root_dir, 'longformer_global_attention_maps/')
+    plt.savefig(save_dir+str(step_id)+'.jpg')
+    plt.close()
 
-def _visualize_attention_map(map):
-    map_line = np.array(map)
-    att_window = config.model_config['attention_window'][0]
 
-    map = []
-    for x in range(len(map_line)):
-        copy_map_line = map_line.copy()
 
-        starting_pos = int(max(x-att_window/2, 0))
-        ending_pos = int(min(x+att_window/2, len(map_line)))
 
-        copy_map_line[starting_pos:ending_pos] = 1  
-        map.append(list(copy_map_line))
-    plt.spy(map, precision = 0.1, markersize = 5)
-    plt.show()
-    return plt
+
+dim_reducer = TSNE(n_components=2)
+def visualize_layerwise_embeddings(hidden_states,masks,labels,epoch,layers_to_visualize):
+
+    num_layers = len(layers_to_visualize)
+    
+    fig = plt.figure(figsize=(24,(num_layers/4)*6)) #each subplot of size 6x6, each row will hold 4 plots
+    ax = [fig.add_subplot(int(num_layers/4),4,i+1) for i in range(num_layers)]
+    
+    labels = labels.cpu().numpy().reshape(-1)
+    for i,layer_i in enumerate(layers_to_visualize):
+        layer_embeds = hidden_states[layer_i]
+        
+        layer_averaged_hidden_states = torch.div(layer_embeds.sum(dim=1),masks.sum(dim=1,keepdim=True))
+        layer_dim_reduced_embeds = dim_reducer.fit_transform(layer_averaged_hidden_states.cpu().detach().numpy())
+        
+        df = pd.DataFrame.from_dict({'x':layer_dim_reduced_embeds[:,0],'y':layer_dim_reduced_embeds[:,1],'label':labels})
+        
+        sns.scatterplot(data=df,x='x',y='y',hue='label',ax=ax[i])
+
+    save_dir = os.path.join(config.root_dir, 'longformer_meta_info/layer_embeddings_'+str(epoch)+'.png')    
+    plt.savefig(save_dir,format='png',pad_inches=0)
