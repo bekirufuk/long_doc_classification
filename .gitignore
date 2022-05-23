@@ -3,6 +3,8 @@ logs/
 wandb/
 tests/
 data/*
+longformer_global_attention_maps/
+longformer_meta_info/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
