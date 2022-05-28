@@ -1,0 +1,42 @@
+data_name: "refined_patents"
+
+patent_columns:
+  - 'patent_id'
+  - 'text'
+patent_dtypes:
+  patent_id: 'object'
+  text: 'object'
+
+ipcr_columns:
+  - 'patent_id'
+  - 'section'
+  - 'ipc_class'
+  - 'subclass'
+ipcr_dtypes:
+  patent_id: 'object'
+  section: 'object'
+  ipc_class: 'object'
+  subclass: 'object'
+
+chunksize: 20
+initial_record_count: 0
+
+labels:
+  - 'A'
+  - 'B'
+  - 'C'
+  - 'D'
+  - 'E'
+  - 'F'
+  - 'G'
+  - 'H'
+
+label2id:
+  'A': 0
+  'B': 1
+  'C': 2
+  'D': 3
+  'E': 4
+  'F': 5
+  'G': 6
+  'H': 7
