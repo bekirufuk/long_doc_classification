@@ -1,5 +1,6 @@
 data/*/*
 !data/*/stats/
+!data/*/data_urls.txt
 !data/sample*/*
 
 # Byte-compiled / optimized / DLL files
