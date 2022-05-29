@@ -2,7 +2,7 @@ data/*/*
 !data/*/stats/
 !data/*/data_urls.txt
 !data/sample*/*
-
+wandb/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
