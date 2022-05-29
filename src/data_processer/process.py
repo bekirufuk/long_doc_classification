@@ -53,6 +53,9 @@ def get_longformer_tokens(data_name='refined_patents', load_tokens=False, test_d
     else:
         dataset = get_dataset()
         tokenized_data = longformer_tokenizer(dataset)
+
+    tokenized_data.set_format("torch")
+    
     if test_data_only:
         return tokenized_data['test'] 
     else:
