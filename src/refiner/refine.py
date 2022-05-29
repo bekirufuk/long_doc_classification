@@ -9,6 +9,7 @@
 
 """
 import yaml
+import csv
 import os.path
 import datetime
 from glob import glob
@@ -27,11 +28,12 @@ if __name__ == '__main__':
     config = get_config()
 
     print('Ipcr data is loading...')
-    ipcr = pd.read_csv('data/' + config['data_name'] + '/ipcr.tsv',
+    ipcr = pd.read_csv('data/' + config['data_name'] + '/raw/ipcr.tsv',
             sep="\t",
             usecols=config['ipcr_columns'],
             dtype=config['ipcr_dtypes'],
             engine='c',
+            quoting=csv.QUOTE_NONNUMERIC
             )
     ipcr.drop_duplicates(subset=['patent_id'], inplace=True, keep='first')
 
@@ -39,7 +41,7 @@ if __name__ == '__main__':
 
     record_count = config['initial_record_count']
     # For all patent data files in raw folder.
-    for file_index, file_dir in enumerate(glob('data/' + config['data_name'] + '/raw/*.tsv')):
+    for file_index, file_dir in enumerate(glob('data/' + config['data_name'] + '/raw/detail*.tsv')):
 
         # Obtain the year info of the patent data from the file name.
         patent_year = os.path.basename(file_dir)[17:21]
@@ -54,31 +56,42 @@ if __name__ == '__main__':
                         engine='c',
                         chunksize=config['chunksize'],
                         encoding='utf8',
+                        quoting=csv.QUOTE_NONNUMERIC
                         )
 
         for chunk_index, chunk in enumerate(chunks):
-            
+
             # Left joint the patents with their corresponding ipc class on patent_id columns
             chunk = chunk.merge(ipcr, how='left', on='patent_id')
 
             # Remove mislabeled or unconventional labels by selecting only patents from 8 classes. 
             chunk = chunk[chunk['section'].isin(config['labels'])]
 
+            # Lowercase the text
+            chunk['text'] = chunk['text'].str.lower()
+
             # Replace the textual section info with their correpondind ids to be suitable for a model input.
             chunk.replace({'section':config['label2id']}, inplace=True)
+
+            # Drop NA rows for the given subset of columns
+            chunk = chunk.dropna(axis=0, how='any', subset=['patent_id','text', 'section']).reset_index(drop=True)
             
             #Obtain the word count with nltk tokenizer
-            word_counts = chunk['text'].apply(nltk.word_tokenize).apply(lambda x: len(x))
+            word_tokens = [nltk.word_tokenize(patent) for patent in chunk['text']]
+            chunk['word_counts'] = [len(tokens) for tokens in word_tokens]
 
-            # Select only the patents within the optimal word count interval
-            chunk = chunk[(word_counts>=512) & (word_counts<=4094)].reset_index(drop=True)
+            # Select only the patents within the optimal word count interval.
+            optimal_bound = (chunk['word_counts']>=512) & (chunk['word_counts']<=4094)
+            chunk = chunk[optimal_bound].reset_index(drop=True)
+            chunk = chunk.drop(columns=['word_counts'])
 
             # Select the number of patents from each class such that each class group would have the same number of patents with the minimum group.  
             groups = chunk.groupby('section')
+
             chunk = groups.apply(lambda x: x.sample(groups.size().min()).reset_index(drop=True)).reset_index(drop=True)
 
-            # Lowercase the text
-            chunk['text'] = chunk['text'].str.lower()
+            # Rename the main classification field to labels for training convenience.
+            chunk.rename(columns={'section':'labels'}, inplace=True)
 
             # Save the chunk as csv with its year and index info.
             chunk_dir = 'data/' + config['data_name'] + '/chunks/patents_' + patent_year + '_chunk_' + str(chunk_index).zfill(3) + '.csv'
