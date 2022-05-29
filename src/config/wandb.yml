@@ -1,0 +1,18 @@
+epochs: 5
+batch_size: 1
+
+num_train_samples: 8
+num_validation_samples: 2
+
+learning_rate: 0.00003
+weight_decay: 0.01
+scheduler_type: 'cosine'
+warmup_rate: 0.1 
+
+global_attention_mapping: 'none'
+log_count: 200
+
+model: 'vanilla_longformer'
+model_type: 'longformer'
+dataset: 'refined_patents'
+classes: 8
