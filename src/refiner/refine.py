@@ -67,8 +67,9 @@ if __name__ == '__main__':
             # Remove mislabeled or unconventional labels by selecting only patents from 8 classes. 
             chunk = chunk[chunk['section'].isin(config['labels'])]
 
-            # Lowercase the text
+            # Lowercase the text and remove the lines.
             chunk['text'] = chunk['text'].str.lower()
+            chunk['text'].replace(r'\n','', regex=True)
 
             # Replace the textual section info with their correpondind ids to be suitable for a model input.
             chunk.replace({'section':config['label2id']}, inplace=True)
