@@ -1,5 +1,0 @@
-data_name: "refined_patents"
-tokenizer: 'longformer_tokenizer'
-
-save_tokennized_data: True
-load_tokenized_data: False

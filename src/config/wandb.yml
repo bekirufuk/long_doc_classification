@@ -1,16 +1,19 @@
 epochs: 5
-batch_size: 1
+train_batch_size: 8
+validation_batch_size: 8
+test_batch_size: 8
 
-num_train_samples: 8
-num_validation_samples: 2
+train_sample_size: 800
+validation_sample_size: 100
+test_sample_size: 100
 
 learning_rate: 0.00003
 weight_decay: 0.01
 scheduler_type: 'cosine'
-warmup_rate: 0.1 
+warmup_ratio: 0.1 
 
 global_attention_mapping: 'none'
-log_count: 200
+log_count: 5
 
 model: 'vanilla_longformer'
 model_type: 'longformer'
