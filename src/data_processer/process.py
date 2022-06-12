@@ -1,6 +1,6 @@
 import yaml
 from transformers import LongformerTokenizerFast
-from datasets import DatasetDict, Features, Value, ClassLabel, load_dataset, load_from_disk
+from datasets import Dataset, DatasetDict, Features, Value, ClassLabel, load_dataset, load_from_disk
 
 
 def get_config():
@@ -26,9 +26,9 @@ def get_dataset(data_name='refined_patents', seed=42, partitions={'train':0.8, '
                         })
     data_files = 'data/' + data_name + '/chunks/*.csv'
 
-    dataset = load_dataset('csv', data_files=data_files, features=features)
-    dataset = dataset['train'].train_test_split(test_size=partitions['test_validation'], shuffle=True)
-    test_val = dataset['test'].train_test_split(test_size=0.5, shuffle=True)
+    dataset = load_dataset('csv', data_files=data_files, features=features, cache_dir='data/'+data_name+'/cache')
+    dataset = dataset['train'].train_test_split(test_size=partitions['test_validation'], shuffle=True, seed=seed)
+    test_val = dataset['test'].train_test_split(test_size=0.5, shuffle=True, seed=seed)
 
     dataset = DatasetDict({
         'train': dataset['train'],
@@ -47,23 +47,24 @@ def longformer_tokenizer(dataset):
     tokenized_data.set_format("torch")
     return tokenized_data
 
-def get_longformer_tokens(data_name='refined_patents', load_tokens=False, test_data_only=False):
+def get_longformer_tokens(data_name='refined_patents', load_tokens=False, test_data_only=False, train_sample_size=None, validation_sample_size=None, test_sample_size=None):
     if load_tokens:
         tokenized_data = load_from_disk('data/'+data_name+'/tokenized/longformer_tokenizer/')
     else:
         dataset = get_dataset()
         tokenized_data = longformer_tokenizer(dataset)
+        save_longformer_tokens(tokenized_data)
 
     tokenized_data.set_format("torch")
     
     if test_data_only:
-        return tokenized_data['test'] 
+        return tokenized_data['test'].select(range(test_sample_size))
     else:
-        return tokenized_data['train'], tokenized_data['validation']
+        return tokenized_data['train'].select(range(train_sample_size)), tokenized_data['validation'].select(range(validation_sample_size))
 
 def save_longformer_tokens(tokenized_data, data_name='refined_patents'):
     print("Saving tokenized data...")
-    tokenized_data.save_to_disk('data/'+data_name+'/tokenized/longformer_tokenizer/')        
+    tokenized_data.save_to_disk('data/'+data_name+'/tokenized/longformer_tokenizer/')
 
 if __name__ == '__main__':
     dataset = get_dataset()
