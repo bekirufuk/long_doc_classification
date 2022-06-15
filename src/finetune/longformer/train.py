@@ -18,8 +18,24 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
-def get_wandb_config():
-    config_dir = 'src/config/wandb.yml'
+def validation_run():
+    # Compute a validation operation on whole validation data (what ever size sampled for this experiment)
+    validation_tracker= {'running_loss':0, 'running_accuracy':0}
+    with torch.no_grad():
+        for batch_id, batch in enumerate(validation_dataloader):
+            outputs = model(**batch)
+
+            validation_tracker['running_loss'] += outputs.loss.cpu()
+
+            predictions = torch.argmax(outputs.logits, dim=-1)
+            validation_tracker['running_accuracy'] += accuracy_score(batch["labels"].cpu(), predictions.cpu())
+    
+    mean_validation_loss = validation_tracker['running_loss']/(batch_id+1)
+    mean_validation_accuracy = validation_tracker['running_accuracy']/(batch_id+1)
+    return mean_validation_loss, mean_validation_accuracy
+
+def get_finetune_config():
+    config_dir = 'src/config/finetune.yml'
     with open(config_dir,'r') as f:
         config = yaml.load(f, Loader=yaml.Loader)
     return config
@@ -27,11 +43,11 @@ def get_wandb_config():
 if __name__ == '__main__':
     
     #Initilize WandB from its config file.
-    wandb_config = get_wandb_config()
-    log_name = wandb_config['model'] + '_' + datetime.now().strftime("%Y-%m-%d-%H%M")
+    finetune_config = get_finetune_config()
+    log_name = finetune_config['model'] + '_' + datetime.now().strftime("%Y-%m-%d-%H%M")
     wandb.init(project="Long Document Classification", 
                 entity="bekirufuk", 
-                config=wandb_config,
+                config=finetune_config,
                 job_type='finetuning_test',
                 name=log_name,
                 )
@@ -43,28 +59,25 @@ if __name__ == '__main__':
     # Initilize Huggingface accelerator to manage GPU assingments of the data. No need to .to(device) after this.
     accelerator = Accelerator(fp16=True)
 
-    train_data, validation_data = get_longformer_tokens(load_tokens=False,
-                                                        train_sample_size=wandb_config['train_sample_size'],
-                                                        validation_sample_size = wandb_config['validation_sample_size']
-                                                        )
+    train_data = get_longformer_tokens(load_tokens=False, train_sample_size=finetune_config['train_sample_size'])
     # Utilize the model with custom config file specifiyng classification labels.
     print('Initializing the Longformer model...')
     longformer_config = LongformerConfig.from_json_file('src/config/model_configs/longformer.json')
     model = LongformerForSequenceClassification.from_pretrained('allenai/longformer-base-4096', config=longformer_config)
     model.gradient_checkpointing_enable()
 
-    train_dataloader = DataLoader(train_data, batch_size=wandb_config['train_batch_size'])
-    validation_dataloader = DataLoader(validation_data, batch_size=wandb_config['validation_batch_size'])
+    train_dataloader = DataLoader(train_data, batch_size=finetune_config['train_batch_size'])
+    #validation_dataloader = DataLoader(validation_data, batch_size=finetune_config['validation_batch_size'])
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=wandb_config['learning_rate'], weight_decay=wandb_config['weight_decay'])
+    optimizer = torch.optim.AdamW(model.parameters(), lr=finetune_config['learning_rate'], weight_decay=finetune_config['weight_decay'])
 
     # Load the data with accelerator for a better GPU performence. No need to send it into the device.
-    train_dataloader, validation_dataloader, model, optimizer = accelerator.prepare(
-        train_dataloader, validation_dataloader, model, optimizer
+    train_dataloader, model, optimizer = accelerator.prepare(
+        train_dataloader, model, optimizer
     )
 
-    num_training_step = int(wandb_config['epochs'] * (wandb_config['train_sample_size'] / wandb_config['train_batch_size']))
-    num_warmup_steps = int(wandb_config['warmup_ratio'] * num_training_step)
+    num_training_step = int(finetune_config['epochs'] * (finetune_config['train_sample_size'] / finetune_config['train_batch_size']))
+    num_warmup_steps = int(finetune_config['warmup_ratio'] * num_training_step)
 
     # Learning rate scheduler for dynamic learning rate.
     lr_scheduler = get_cosine_schedule_with_warmup(
@@ -74,16 +87,16 @@ if __name__ == '__main__':
     )
 
     progress_bar = tqdm(range(num_training_step))
-    log_interval = int(num_training_step/wandb_config['log_count'])
+    log_interval = int(num_training_step/finetune_config['log_count'])
 
     # Dict to keep track of the running avg. scores
     train_tracker = {'running_loss':0, 'running_loss_counter':0, 'running_accuracy':0, 'running_accuracy_counter':0}
-    best_valiadtion_accuracy=0
+    best_train_accuracy=0
 
     step_counter=0
     model.train()
     print("\n----------\n TRAINING STARTED \n----------\n")
-    for epoch in range(wandb_config['epochs']):
+    for epoch in range(finetune_config['epochs']):
         for batch_id, batch in enumerate(train_dataloader):
 
             is_log_step = step_counter % log_interval == 0 and step_counter!=0
@@ -110,32 +123,16 @@ if __name__ == '__main__':
 
                 mean_train_loss = train_tracker['running_loss'] / train_tracker['running_loss_counter']
                 mean_train_accuracy = train_tracker['running_accuracy'] / train_tracker['running_accuracy_counter']
-                del outputs
-                # Compute a validation operation on whole validation data (what ever size sampled for this experiment)
-
-                validation_tracker= {'running_loss':0, 'running_accuracy':0}
-                with torch.no_grad():
-                    for batch_id, batch in enumerate(validation_dataloader):
-                        outputs = model(**batch)
-
-                        validation_tracker['running_loss'] += outputs.loss.cpu()
-
-                        predictions = torch.argmax(outputs.logits, dim=-1)
-                        validation_tracker['running_accuracy'] += accuracy_score(batch["labels"].cpu(), predictions.cpu())
-                
-                mean_validation_loss = validation_tracker['running_loss']/(batch_id+1)
-                mean_validation_accuracy = validation_tracker['running_accuracy']/(batch_id+1)
 
                 # Save and overwrite the model if performs better then the last model.
-                if mean_validation_accuracy > best_valiadtion_accuracy:
-                    model.save_pretrained('models/{model_type}/{model}'.format(model_type=wandb_config['model_type'], model=wandb_config['model']))
+                if mean_train_accuracy > best_train_accuracy:
+                    best_train_accuracy = mean_train_accuracy
+                    model.save_pretrained('models/{model_type}/{model}'.format(model_type=finetune_config['model_type'], model=finetune_config['model']))
 
                 #Log the log to WandB
                 wandb.log({
                     "Training Loss": mean_train_loss,
                     "Training Accuracy": mean_train_accuracy,
-                    "Validation Loss": mean_validation_loss,
-                    "Validation Accuracy": mean_validation_accuracy,
                     "Epoch":epoch+1,
                     "Learning Rate": lr_scheduler.get_last_lr()[0]
                 })
@@ -166,11 +163,11 @@ if __name__ == '__main__':
     print("\n----------\n EVALUATION STARTED \n----------\n")
     torch.cuda.empty_cache()
 
-    # Load the best model based on the validation score.
-    model = LongformerForSequenceClassification.from_pretrained('models/{model_type}/{model}'.format(model_type=wandb_config['model_type'], model=wandb_config['model']))
+    # Load the best model.
+    #model = LongformerForSequenceClassification.from_pretrained('models/{model_type}/{model}'.format(model_type=finetune_config['model_type'], model=finetune_config['model']))
 
-    test_data = get_longformer_tokens(test_data_only=True,load_tokens=True, test_sample_size=wandb_config['test_sample_size'])
-    test_dataloader = DataLoader(test_data, batch_size=wandb_config['test_batch_size'])
+    test_data = get_longformer_tokens(test_data_only=True,load_tokens=True, test_sample_size=finetune_config['test_sample_size'])
+    test_dataloader = DataLoader(test_data, batch_size=finetune_config['test_batch_size'])
 
     num_test_step = len(test_dataloader)
     progress_bar = tqdm(range(num_test_step))

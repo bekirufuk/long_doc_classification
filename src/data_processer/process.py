@@ -60,7 +60,7 @@ def get_longformer_tokens(data_name='refined_patents', load_tokens=False, test_d
     if test_data_only:
         return tokenized_data['test'].select(range(test_sample_size))
     else:
-        return tokenized_data['train'].select(range(train_sample_size)), tokenized_data['validation'].select(range(validation_sample_size))
+        return tokenized_data['train'].select(range(train_sample_size)) #, tokenized_data['validation'].select(range(validation_sample_size))
 
 def save_longformer_tokens(tokenized_data, data_name='refined_patents'):
     print("Saving tokenized data...")
