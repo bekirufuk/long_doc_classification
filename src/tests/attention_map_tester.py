@@ -1,3 +1,8 @@
+""" Imitates the structure of the training script
+    but its only purpose to provide a test ground
+    in a controlled, isolated environment.
+"""
+
 import sys
 import os
 import yaml
@@ -18,7 +23,7 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
-def validation_run():
+"""def validation_run():
     # Compute a validation operation on whole validation data (what ever size sampled for this experiment)
     validation_tracker= {'running_loss':0, 'running_accuracy':0}
     with torch.no_grad():
@@ -32,7 +37,7 @@ def validation_run():
     
     mean_validation_loss = validation_tracker['running_loss']/(batch_id+1)
     mean_validation_accuracy = validation_tracker['running_accuracy']/(batch_id+1)
-    return mean_validation_loss, mean_validation_accuracy
+    return mean_validation_loss, mean_validation_accuracy"""
 
 def get_finetune_config():
     config_dir = 'src/config/finetune.yml'
@@ -53,13 +58,19 @@ if __name__ == '__main__':
     # Initilize Huggingface accelerator to manage GPU assingments of the data. No need to .to(device) after this.
     accelerator = Accelerator(fp16=True)
 
-    train_data = get_longformer_tokens(load_tokens=False, train_sample_size=finetune_config['train_sample_size'])
+    train_data = get_longformer_tokens(load_tokens=True, train_sample_size=finetune_config['train_sample_size'])
     # Utilize the model with custom config file specifiyng classification labels.
     print('Initializing the Longformer model...')
     longformer_config = LongformerConfig.from_json_file('src/config/model_configs/longformer.json')
     model = LongformerForSequenceClassification.from_pretrained('allenai/longformer-base-4096', config=longformer_config)
     model.gradient_checkpointing_enable()
 
+    for param in model.base_model.parameters():
+        param.requires_grad = False
+    
+    for param in model.parameters():
+        print(param.requires_grad, type(param), param.size()) 
+    sys.exit()
     train_dataloader = DataLoader(train_data, batch_size=finetune_config['train_batch_size'])
     #validation_dataloader = DataLoader(validation_data, batch_size=finetune_config['validation_batch_size'])
 
