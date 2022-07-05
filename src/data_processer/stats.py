@@ -1,15 +1,15 @@
-import os, sys, glob
+import sys, glob
 import pandas as pd
-import tokenizers
+import numpy as np
 from tqdm import tqdm
 import pickle
 
-from datasets import Dataset, load_from_disk
+from datasets import load_from_disk
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 data_name = 'refined_patents'
 tokenizer = 'longformer'
-partition = 'train'
+partition = ''
 
 def read_tokenized_data():
     ''' 
@@ -28,9 +28,15 @@ def read_tokenized_data():
     tokenized_data = load_from_disk("data/"+data_name+"/tokenized/"+tokenizer+"_tokenizer/"+partition)
     print('Tokenized data loaded.')
 
-    df = pd.DataFrame(columns=['text', 'labels'])
-    df['text'] = [' '.join([str(word) for word in doc]) for doc in tokenized_data['input_ids']]
-    df['labels'] = tokenized_data['labels']
+    print('Concat tokens as a single string...')
+    df = pd.DataFrame(columns=['patent_id','text', 'labels'])
+
+    df['patent_id'] = tokenized_data['patent_id'][:10000]
+    df['labels'] = tokenized_data['labels'][:10000]
+
+    tokenized_data.set_format('numpy')
+    df['text'] = [' '.join([str(word) for word in doc]) for doc in tqdm(tokenized_data['input_ids'])][:10000]
+    
     return df
 
 def read_chunks(limit=None):
@@ -58,34 +64,37 @@ def read_chunks(limit=None):
 def create_tfidf(data):
     '''
         Creates a tfidf matrix and feature list for a given pandas series that consist of strings of words.
+        Converts the sparse tfif into pandas DataFrame.
 
         Parameters:
                          data: pandas Series object to tfidf be calculated on.
         Returns:
-            -sklearn TfidfVectorizer spare matrix: tfidf_vectors
-            -sklearn ndarray of str objects      : feature_list
+            -pandas DataFrame
     '''
-
-    tfidf_vectorizer = TfidfVectorizer(token_pattern=r"(?u)\b\w+\b") #Token pattern is changed so it would read single digits also.
+    print('Creating the tfidf vectorizer...')
+    tfidf_vectorizer = TfidfVectorizer(token_pattern=r"(?u)\b\w+\b", dtype=np.float32) #Token pattern is changed so it would read single digits also.
     
     print('Fitting the tfidf vectorizer...')
-    tfidf_vectors = tfidf_vectorizer.fit_transform(tqdm(data))
+    tfidf_vectors = tfidf_vectorizer.fit_transform(tqdm(data['text']))
     feature_list  = tfidf_vectorizer.get_feature_names_out()
+
+    #tfidf = pd.DataFrame(tfidf_vectors.toarray(), columns=feature_list)
+    #tfidf.insert(0, 'patent_id', list(data['patent_id']))
     return tfidf_vectors, feature_list
 
-def save_tfidf(tfidf_vectors, feature_list, label_name=None):
+def save_tfidf(tfidf_vectors, feature_list, label_based=False, label=None):
     '''
         Saves given tfidf_vectors with their features list as a pickle file. 
     '''
     print('Saving pickle files')
 
-    if label_name is not None:
-        save_dir = 'data/'+data_name+'/tfidf/label_based/'+str(label_name)+'_'+partition
+    if label_based:
+        save_dir = 'data/'+data_name+'/tfidf/longformer_tokenizer_no_stopwords/label_based/'+str(label)+'_'+partition
     else:
-        save_dir = 'data/'+data_name+'/tfidf/'+partition
+        save_dir = 'data/'+data_name+'/tfidf/longformer_tokenizer_no_stopwords/'+partition
 
-    pickle.dump(tfidf_vectors, open(save_dir+'_tfidf.pkl', 'wb'))
-    pickle.dump(feature_list, open(save_dir+'_feature_names.pkl', 'wb'))
+    pickle.dump(tfidf_vectors, open(save_dir+'_tfidf_sparse.pkl', 'wb'))
+    pickle.dump(feature_list, open(save_dir+'_f_list.pkl', 'wb'))
 
 def get_class_based_tfidf(df):
     '''
@@ -95,19 +104,26 @@ def get_class_based_tfidf(df):
         Saves every label groups tfidf scores separately
     '''
     groups = df.groupby('labels')
+
+    df = pd.DataFrame()
     for label, group in tqdm(groups):
-        tfidf_vectors, feature_list = create_tfidf(group['text'])
-        print(tfidf_vectors)
-        save_tfidf(tfidf_vectors, feature_list, label_name=label)
+        tfidf_vectors, feature_list = create_tfidf(group)
+        save_tfidf(tfidf_vectors, feature_list, label_based=True, label=label)
+        #df = pd.concat([df,tfidf], axis=0, ignore_index=True).fillna(0)
+
 
 
 if __name__ == '__main__':
+
+    for p in ['train', 'validation','test']:
+        print('Operations for {} \n\n\n'.format(partition))
+        partition = p
     
-    df = read_tokenized_data()
+        df = read_tokenized_data()
+        # Create and save tfidf for whole corpus
+        tfidf_vectors, feature_list = create_tfidf(df)
+        save_tfidf(tfidf_vectors, feature_list)
+        del tfidf_vectors, feature_list
 
-    # Create and save tfidf for whole corpus
-    tfidf_vectors, feature_list = create_tfidf(df['text'])
-    save_tfidf(tfidf_vectors, feature_list)
-
-    # Create and save lael based tfidf for local label corpora
-    get_class_based_tfidf(df)
+        # Create and save lael based tfidf for local label corpora
+        get_class_based_tfidf(df)
