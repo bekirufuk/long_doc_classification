@@ -19,12 +19,13 @@ def get_dataset(data_name='refined_patents', seed=42, partitions={'train':0.8, '
         dataset: A Huggingface dataset object. https://huggingface.co/docs/datasets/access 
         """
     print("Loading dataset from csv...")
-    features = Features({'text': Value('string'),
+    features = Features({   'patent_id': Value('string'),
+                            'text': Value('string'),
                             'labels': ClassLabel(names=["A","B","C","D","E","F","G","H"]),
                             'ipc_class': Value('string'),
                             'subclass': Value('string'),
                         })
-    data_files = 'data/' + data_name + '/chunks/*.csv'
+    data_files = 'data/' + data_name + '/chunks/preprocessed/*.csv'
 
     dataset = load_dataset('csv', data_files=data_files, features=features, cache_dir='data/'+data_name+'/cache')
     dataset = dataset['train'].train_test_split(test_size=partitions['test_validation'], shuffle=True, seed=seed)
@@ -43,8 +44,8 @@ def batch_tokenizer(batch, tokenizer):
 def longformer_tokenizer(dataset):
     print('Tokenizing the dataset with LongformerTokenizer')
     tokenizer = LongformerTokenizerFast.from_pretrained('allenai/longformer-base-4096', max_length=4096)
-    tokenized_data = dataset.map(batch_tokenizer, batched=True, remove_columns=['text', 'ipc_class', 'subclass'], fn_kwargs= {"tokenizer":tokenizer})
-    tokenized_data.set_format("torch")
+    tokenized_data = dataset.map(batch_tokenizer, batched=True, remove_columns=['text'], fn_kwargs= {"tokenizer":tokenizer})
+    #tokenized_data.set_format("torch")
     return tokenized_data
 
 def get_longformer_tokens(data_name='refined_patents', load_tokens=False, test_data_only=False, train_sample_size=None, validation_sample_size=None, test_sample_size=None):
@@ -55,7 +56,7 @@ def get_longformer_tokens(data_name='refined_patents', load_tokens=False, test_d
         tokenized_data = longformer_tokenizer(dataset)
         save_longformer_tokens(tokenized_data)
 
-    tokenized_data.set_format("torch")
+    #tokenized_data.set_format("torch")
     
     if test_data_only:
         return tokenized_data['test'].select(range(test_sample_size))
@@ -64,7 +65,7 @@ def get_longformer_tokens(data_name='refined_patents', load_tokens=False, test_d
 
 def save_longformer_tokens(tokenized_data, data_name='refined_patents'):
     print("Saving tokenized data...")
-    tokenized_data.save_to_disk('data/'+data_name+'/tokenized/longformer_tokenizer/')
+    tokenized_data.save_to_disk('data/'+data_name+'/tokenized/longformer_tokenizer_no_stopwords/')
 
 if __name__ == '__main__':
     dataset = get_dataset()
