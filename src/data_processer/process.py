@@ -50,7 +50,7 @@ def longformer_tokenizer(dataset):
 
 def get_longformer_tokens(data_name='refined_patents', load_tokens=False, test_data_only=False, train_sample_size=None, validation_sample_size=None, test_sample_size=None):
     if load_tokens:
-        tokenized_data = load_from_disk('data/'+data_name+'/tokenized/longformer_tokenizer/')
+        tokenized_data = load_from_disk('data/'+data_name+'/tokenized/longformer_tokenizer_no_stopwords/')
     else:
         dataset = get_dataset()
         tokenized_data = longformer_tokenizer(dataset)
