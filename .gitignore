@@ -4,6 +4,7 @@ data/*/*
 !data/sample*/*
 wandb/
 reports/
+models/
 *.pkl
 # Byte-compiled / optimized / DLL files
 __pycache__/
