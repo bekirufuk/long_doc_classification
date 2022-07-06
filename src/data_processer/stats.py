@@ -4,6 +4,8 @@ import numpy as np
 from tqdm import tqdm
 import pickle
 
+from scipy.sparse import csr_matrix
+
 from datasets import load_from_disk
 from sklearn.feature_extraction.text import TfidfVectorizer
 
@@ -31,11 +33,11 @@ def read_tokenized_data():
     print('Concat tokens as a single string...')
     df = pd.DataFrame(columns=['patent_id','text', 'labels'])
 
-    df['patent_id'] = tokenized_data['patent_id'][:10000]
-    df['labels'] = tokenized_data['labels'][:10000]
+    df['patent_id'] = tokenized_data['patent_id']
+    df['labels'] = tokenized_data['labels']
 
     tokenized_data.set_format('numpy')
-    df['text'] = [' '.join([str(word) for word in doc]) for doc in tqdm(tokenized_data['input_ids'])][:10000]
+    df['text'] = [' '.join([str(word) for word in doc]) for doc in tqdm(tokenized_data['input_ids'])]
     
     return df
 
@@ -107,23 +109,55 @@ def get_class_based_tfidf(df):
 
     df = pd.DataFrame()
     for label, group in tqdm(groups):
+        
         tfidf_vectors, feature_list = create_tfidf(group)
-        save_tfidf(tfidf_vectors, feature_list, label_based=True, label=label)
-        #df = pd.concat([df,tfidf], axis=0, ignore_index=True).fillna(0)
 
+        tfidf = pd.DataFrame(tfidf_vectors.toarray(), columns=feature_list)
+
+        tfidf['patent_id'] = list(group['patent_id'])
+
+        save_dir = 'data/'+data_name+'/tfidf/longformer_tokenizer_no_stopwords/label_based/'+partition+'_'+str(label)
+        pickle.dump(tfidf, open(save_dir+'_tfidf.pkl', 'wb'))
+
+def combine_class_based_tfidf(df):
+
+    combined_df = pd.DataFrame()
+
+    for i in range(8):
+        label_based = df[df['labels']==i]
+
+        tfidf = pd.read_pickle('data/refined_patents/tfidf/longformer_tokenizer_no_stopwords/label_based/'+partition+'_'+str(i)+'_tfidf.pkl')
+        tfidf['general_index'] = label_based.index
+
+        tfidf.set_index("general_index", inplace = True)
+        combined_df = pd.concat([combined_df, tfidf])
+        
+    combined_df.sort_index(inplace=True)
+    combined_df.fillna(0, inplace=True)
+    combined_df.index.name = None
+
+    df_sparsed = combined_df.astype(pd.SparseDtype("float", np.nan))
+    tfidf_vectors = csr_matrix(df_sparsed.sparse.to_coo())
+    feature_list = combined_df.columns
+
+    save_dir = 'data/'+data_name+'/tfidf/longformer_tokenizer_no_stopwords/label_based/'+partition
+    pickle.dump(tfidf_vectors, open(save_dir+'_tfidf_sparse.pkl', 'wb'))
+    pickle.dump(feature_list, open(save_dir+'_f_list.pkl', 'wb'))
 
 
 if __name__ == '__main__':
 
     for p in ['train', 'validation','test']:
-        print('Operations for {} \n\n\n'.format(partition))
         partition = p
-    
+        print('Operations for {} \n'.format(partition))
+        
         df = read_tokenized_data()
+
         # Create and save tfidf for whole corpus
-        tfidf_vectors, feature_list = create_tfidf(df)
-        save_tfidf(tfidf_vectors, feature_list)
-        del tfidf_vectors, feature_list
+        #tfidf_vectors, feature_list = create_tfidf(df)
+        #save_tfidf(tfidf_vectors, feature_list)
 
         # Create and save lael based tfidf for local label corpora
-        get_class_based_tfidf(df)
+        #get_class_based_tfidf(df)
+
+        combine_class_based_tfidf(df)
