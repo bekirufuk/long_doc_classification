@@ -3,19 +3,19 @@ train_batch_size: 8
 validation_batch_size: 8
 test_batch_size: 8
 
-train_sample_size: 8
-validation_sample_size: 1
-test_sample_size: 1
+train_sample_size: 20000
+validation_sample_size: 100
+test_sample_size: 3200
 
 learning_rate: 0.00003
 weight_decay: 0.01
 scheduler_type: 'cosine'
-warmup_ratio: 0.1 
+warmup_rate: 0.1 
 
-global_attention_mapping: 'none'
-log_count: 5
+global_attention_mapping: 'tfidf'
+log_count: 200
 
-model: 'vanilla_longformer'
+model: 'tfidf_longformer'
 model_type: 'longformer'
 dataset: 'refined_patents'
 classes: 8
