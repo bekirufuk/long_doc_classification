@@ -94,8 +94,8 @@ if __name__ == '__main__':
     log_interval = int(num_training_step/finetune_config['log_count'])
 
     # Load the sparse tfidf matrix and the feature_names(containing input_ids as words)
-    tfidf_sparse = pd.read_pickle('data/refined_patents/tfidf/longformer_tokenizer_no_stopwords/train_tfidf_sparse.pkl')
-    f_names = pd.read_pickle('data/refined_patents/tfidf/longformer_tokenizer_no_stopwords/train_f_list.pkl')
+    tfidf_sparse = pd.read_pickle('data/refined_patents/tfidf/longformer_tokenizer_no_stopwords/label_based/train_tfidf_sparse.pkl')
+    f_names = pd.read_pickle('data/refined_patents/tfidf/longformer_tokenizer_no_stopwords/lable/based/train_f_list.pkl')
 
     # Dict to keep track of the running avg. scores
     train_tracker = {'running_loss':0, 'running_loss_counter':0, 'running_accuracy':0, 'running_accuracy_counter':0}

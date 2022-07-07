@@ -9,13 +9,14 @@
 import numpy as np
 import pandas as pd
 from torch import zeros, long
+import sys
 
 # Uncomment below code for 'tfidf_qual_analysis' function.
-'''from transformers import LongformerTokenizerFast
+from transformers import LongformerTokenizerFast
 tokenizer = LongformerTokenizerFast.from_pretrained('allenai/longformer-base-4096', max_length=4096)
 id2label =  {0: "A", 1: "B", 2: "C", 3: "D", 4: "E", 5: "F", 6: "G", 7: "H"}
 label2description= {'A': 'Human Necessities', 'B':'Performing Operations; Transporting', 'C':'Chemistry; Metallurgy','D':'Textiles; Paper',
-                    'E':'Fixed Constructions','F':'Mechanical Engineering; Lighting; Heating; Weapons; Blasting','G':'Physics','H':'Electricity'}'''
+                    'E':'Fixed Constructions','F':'Mechanical Engineering; Lighting; Heating; Weapons; Blasting','G':'Physics','H':'Electricity'}
 
 def tfidf_qual_analysis(tfidf, f_names, input_ids, labels):
 
@@ -23,7 +24,8 @@ def tfidf_qual_analysis(tfidf, f_names, input_ids, labels):
     tfidf = pd.DataFrame(tfidf.toarray(), columns=f_names)
 
     # Assingn zero to some specific columns of tfidf matrix. These are the column names for the following tokens: ['[PAD]', '.', ',', '...' ].
-    tfidf.loc[:,['1', '4', '6', '38917']] = 0
+    tfidf.loc[:,['0','1', '4', '6', '38917']] = 0
+
 
     # Turn GPU Tensor input_ids to CPU DataFrame of strings, so the input_id values could be matched with tfidf column names (which are the same as input_ids).
     input_ids = pd.DataFrame(input_ids.cpu().detach().numpy(), dtype=str)
@@ -36,7 +38,7 @@ def tfidf_qual_analysis(tfidf, f_names, input_ids, labels):
 
         # Cast the tfidf values to numpy array and obtain the indices of a number of highest tfidf scores.
         # These indices correspond the indices of 'to be globally connected tokens' for the model forward. 
-        tf_idf_values_of_input = np.array(tf_idf_values_of_input, dtype=np.float16)
+        tf_idf_values_of_input = np.array(tf_idf_values_of_input, dtype=np.float32)
         top_tfidf_idxs = np.argsort(tf_idf_values_of_input)[-128:]
 
         # Uncomment below code for a detailed view of the selected input_ids.
@@ -56,7 +58,7 @@ def map_tfidf(tfidf, f_names, input_ids, device):
     tfidf = pd.DataFrame(tfidf.toarray(), columns=f_names)
 
     # Assingn zero to some specific columns of tfidf matrix. These are the column names for the following tokens: ['[PAD]', '.', ',', '...' ].
-    tfidf.loc[:,['1', '4', '6', '38917']] = 0
+    tfidf.loc[:,['0','1', '4', '6', '38917']] = 0
 
     # Turn GPU Tensor input_ids to CPU DataFrame of strings, so the input_id values could be matched with tfidf column names (which are the same as input_ids).
     input_ids = pd.DataFrame(input_ids.cpu().detach().numpy(), dtype=str)

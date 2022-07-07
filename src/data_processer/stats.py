@@ -107,57 +107,29 @@ def get_class_based_tfidf(df):
     '''
     groups = df.groupby('labels')
 
-    df = pd.DataFrame()
     for label, group in tqdm(groups):
         
         tfidf_vectors, feature_list = create_tfidf(group)
-
-        tfidf = pd.DataFrame(tfidf_vectors.toarray(), columns=feature_list)
-
-        tfidf['patent_id'] = list(group['patent_id'])
+        tfidf = pd.DataFrame(tfidf_vectors.toarray(), columns=feature_list, dtype=np.float16)
+        tfidf['general_index'] = list(group.index)
 
         save_dir = 'data/'+data_name+'/tfidf/longformer_tokenizer_no_stopwords/label_based/'+partition+'_'+str(label)
+
+        #tfidf.to_csv(save_dir+'_tfidf.csv', index=False)
         pickle.dump(tfidf, open(save_dir+'_tfidf.pkl', 'wb'))
-
-def combine_class_based_tfidf(df):
-
-    combined_df = pd.DataFrame()
-
-    for i in range(8):
-        label_based = df[df['labels']==i]
-
-        tfidf = pd.read_pickle('data/refined_patents/tfidf/longformer_tokenizer_no_stopwords/label_based/'+partition+'_'+str(i)+'_tfidf.pkl')
-        tfidf['general_index'] = label_based.index
-
-        tfidf.set_index("general_index", inplace = True)
-        combined_df = pd.concat([combined_df, tfidf])
-        
-    combined_df.sort_index(inplace=True)
-    combined_df.fillna(0, inplace=True)
-    combined_df.index.name = None
-
-    df_sparsed = combined_df.astype(pd.SparseDtype("float", np.nan))
-    tfidf_vectors = csr_matrix(df_sparsed.sparse.to_coo())
-    feature_list = combined_df.columns
-
-    save_dir = 'data/'+data_name+'/tfidf/longformer_tokenizer_no_stopwords/label_based/'+partition
-    pickle.dump(tfidf_vectors, open(save_dir+'_tfidf_sparse.pkl', 'wb'))
-    pickle.dump(feature_list, open(save_dir+'_f_list.pkl', 'wb'))
 
 
 if __name__ == '__main__':
 
-    for p in ['train', 'validation','test']:
+    for p in ['train', 'test', 'validation']:
         partition = p
         print('Operations for {} \n'.format(partition))
         
         df = read_tokenized_data()
 
         # Create and save tfidf for whole corpus
-        #tfidf_vectors, feature_list = create_tfidf(df)
-        #save_tfidf(tfidf_vectors, feature_list)
+        tfidf_vectors, feature_list = create_tfidf(df)
+        save_tfidf(tfidf_vectors, feature_list)
 
-        # Create and save lael based tfidf for local label corpora
-        #get_class_based_tfidf(df)
-
-        combine_class_based_tfidf(df)
+        # Create and save label based tfidf for local label corpora
+        get_class_based_tfidf(df)

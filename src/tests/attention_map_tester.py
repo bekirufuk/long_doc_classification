@@ -9,21 +9,19 @@ import yaml
 import pandas as pd
 from tqdm.auto import tqdm
 from datetime import datetime
-from sklearn.metrics import accuracy_score
 
 import torch
 from torch.utils.data import DataLoader
-from transformers import LongformerForSequenceClassification, LongformerConfig, get_cosine_schedule_with_warmup
 
 sys.path.append(os.getcwd())
-from src.utils.attention_mapper import map_tfidf
+from src.utils.attention_mapper import map_tfidf, tfidf_qual_analysis
 from src.data_processer.process import get_longformer_tokens
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
 def get_finetune_config():
-    config_dir = 'src/config/finetune.yml'
+    config_dir = 'src/config/test.yml'
     with open(config_dir,'r') as f:
         config = yaml.load(f, Loader=yaml.Loader)
     return config
@@ -64,4 +62,4 @@ if __name__ == '__main__':
             tfidf_range_start = finetune_config['train_batch_size']*batch_id
             tfidf_range_end = tfidf_range_start + finetune_config['train_batch_size']
 
-            global_attention_map = map_tfidf(tfidf_sparse[tfidf_range_start:tfidf_range_end], f_names, batch['input_ids'], batch['labels'])
+            global_attention_map = tfidf_qual_analysis(tfidf_sparse[tfidf_range_start:tfidf_range_end], f_names, batch['input_ids'], batch['labels'])
