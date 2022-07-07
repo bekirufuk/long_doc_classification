@@ -2,9 +2,12 @@ data/*/*
 !data/*/stats/
 !data/*/data_urls.txt
 !data/sample*/*
+
 wandb/
 reports/
 models/
+notebooks/
+
 *.pkl
 # Byte-compiled / optimized / DLL files
 __pycache__/
