@@ -14,7 +14,7 @@ import torch
 from torch.utils.data import DataLoader
 
 sys.path.append(os.getcwd())
-from src.utils.attention_mapper import map_tfidf, tfidf_qual_analysis
+from src.utils.attention_mapper import random_map
 from src.data_processer.process import get_longformer_tokens
 
 import warnings
@@ -52,8 +52,8 @@ if __name__ == '__main__':
     progress_bar = tqdm(range(num_training_step))
 
     # Load the sparse tfidf matrix and the feature_names(containing input_ids as words)
-    tfidf_sparse = pd.read_pickle('data/refined_patents/tfidf/longformer_tokenizer_no_stopwords/train_tfidf_sparse.pkl')
-    f_names = pd.read_pickle('data/refined_patents/tfidf/longformer_tokenizer_no_stopwords/train_f_list.pkl')
+    #tfidf_sparse = pd.read_pickle('data/refined_patents/tfidf/longformer_tokenizer_no_stopwords/train_tfidf_sparse.pkl')
+    #f_names = pd.read_pickle('data/refined_patents/tfidf/longformer_tokenizer_no_stopwords/train_f_list.pkl')
 
     step_counter=0
     for epoch in range(finetune_config['epochs']):
@@ -62,4 +62,6 @@ if __name__ == '__main__':
             tfidf_range_start = finetune_config['train_batch_size']*batch_id
             tfidf_range_end = tfidf_range_start + finetune_config['train_batch_size']
 
-            global_attention_map = tfidf_qual_analysis(tfidf_sparse[tfidf_range_start:tfidf_range_end], f_names, batch['input_ids'], batch['labels'])
+            global_attention_map = random_map(batch['input_ids'], device)
+            for m in global_attention_map:
+                print((m!=0).sum())
