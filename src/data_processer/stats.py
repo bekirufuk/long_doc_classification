@@ -13,7 +13,7 @@ data_name = 'refined_patents'
 tokenizer = 'longformer'
 partition = ''
 
-def read_tokenized_data():
+def read_tokenized_data(limit=None):
     ''' 
         Loads tokenized data from a folder that is specified with global data_name and tokenizer variables.
         Loads only the specified partition in the global parameter.
@@ -27,40 +27,20 @@ def read_tokenized_data():
         Returns: pandas DataFrame
     '''
     print('Loading tokenized data...')
-    tokenized_data = load_from_disk("data/"+data_name+"/tokenized/"+tokenizer+"_tokenizer/"+partition)
+    tokenized_data = load_from_disk("data/refined_patents/tokenized/"+tokenizer+"_tokenizer_no_stopwords/")[partition]
+    if limit:
+        tokenized_data = tokenized_data.select(range(limit))
+    tokenized_data = tokenized_data.remove_columns(['ipc_class', 'subclass'])
     print('Tokenized data loaded.')
 
+    df = pd.DataFrame(data={'patent_id':tokenized_data['patent_id'],
+                            'input_ids':tokenized_data['input_ids'],
+                            'labels':tokenized_data['labels']
+                            })
+
     print('Concat tokens as a single string...')
-    df = pd.DataFrame(columns=['patent_id','text', 'labels'])
-
-    df['patent_id'] = tokenized_data['patent_id']
-    df['labels'] = tokenized_data['labels']
-
-    tokenized_data.set_format('numpy')
-    df['text'] = [' '.join([str(word) for word in doc]) for doc in tqdm(tokenized_data['input_ids'])]
+    df['text'] = [' '.join([str(word) for word in doc]) for doc in tqdm(np.array(df['input_ids']))]
     
-    return df
-
-def read_chunks(limit=None):
-    '''
-        Reads all (if there is no limit) the .csv files inside the chunks/ under the given data_name directory. Combines them into a single dataframe and returns it.
-
-        Parameters:
-            (global, str)data_name: name of the data folder.
-            (optional, int)limit  : limits to files to be read to a certain number. Default: None. Used for testing purposes.
-        
-        Returns: pandas DataFrame
-    '''
-
-    files = glob.glob("data/"+data_name+"/chunks/*.csv")
-    if limit:
-        files = files[:limit]
-
-    print('Reading chunk files...')  
-    df = pd.DataFrame()
-    for file in tqdm(files):
-        chunk = pd.read_csv(file)
-        df = pd.concat([df,chunk], ignore_index=True)
     return df
 
 def create_tfidf(data):
@@ -74,24 +54,22 @@ def create_tfidf(data):
             -pandas DataFrame
     '''
     print('Creating the tfidf vectorizer...')
-    tfidf_vectorizer = TfidfVectorizer(token_pattern=r"(?u)\b\w+\b", dtype=np.float32) #Token pattern is changed so it would read single digits also.
+    tfidf_vectorizer = TfidfVectorizer(token_pattern=r"(?u)\b\w+\b") #Token pattern is changed so it would read single digits also.
     
     print('Fitting the tfidf vectorizer...')
     tfidf_vectors = tfidf_vectorizer.fit_transform(tqdm(data['text']))
     feature_list  = tfidf_vectorizer.get_feature_names_out()
 
-    #tfidf = pd.DataFrame(tfidf_vectors.toarray(), columns=feature_list)
-    #tfidf.insert(0, 'patent_id', list(data['patent_id']))
     return tfidf_vectors, feature_list
 
 def save_tfidf(tfidf_vectors, feature_list, label_based=False, label=None):
     '''
         Saves given tfidf_vectors with their features list as a pickle file. 
     '''
-    print('Saving pickle files')
+    print('Saving pickle files...')
 
     if label_based:
-        save_dir = 'data/'+data_name+'/tfidf/longformer_tokenizer_no_stopwords/label_based/'+str(label)+'_'+partition
+        save_dir = 'data/'+data_name+'/tfidf/longformer_tokenizer_no_stopwords/label_based/'+partition+'_'+str(label)
     else:
         save_dir = 'data/'+data_name+'/tfidf/longformer_tokenizer_no_stopwords/'+partition
 
@@ -107,24 +85,37 @@ def get_class_based_tfidf(df):
     '''
     groups = df.groupby('labels')
 
+    tfidf = pd.DataFrame()
     for label, group in tqdm(groups):
         
         tfidf_vectors, feature_list = create_tfidf(group)
-        tfidf = pd.DataFrame(tfidf_vectors.toarray(), columns=feature_list, dtype=np.float16)
-        tfidf['general_index'] = list(group.index)
+        label_based_tfidf = pd.DataFrame(tfidf_vectors.toarray(), columns=feature_list)
+        label_based_tfidf['general_index'] = list(group.index)
+        label_based_tfidf['patent_id'] = list(group.patent_id)
+        
+        tfidf = pd.concat([tfidf, label_based_tfidf], ignore_index=True)
+    
+    del df, label_based_tfidf
+    
+    tfidf = tfidf.set_index('general_index')
+    tfidf = tfidf.sort_index()
+    tfidf = tfidf.fillna(0)
+    tfidf.index.name = None
 
-        save_dir = 'data/'+data_name+'/tfidf/longformer_tokenizer_no_stopwords/label_based/'+partition+'_'+str(label)
+    tfidf_sparse = csr_matrix(tfidf.values)
 
-        #tfidf.to_csv(save_dir+'_tfidf.csv', index=False)
-        pickle.dump(tfidf, open(save_dir+'_tfidf.pkl', 'wb'))
-
+    save_dir = 'data/refined_patents/tfidf/longformer_tokenizer_no_stopwords/label_based/'+partition
+    
+    pickle.dump(tfidf_sparse, open(save_dir+'_tfidf_sparse.pkl', 'wb'))
+    pickle.dump(tfidf.columns, open(save_dir+'_f_list.pkl', 'wb'))
 
 if __name__ == '__main__':
 
-    for p in ['train', 'test', 'validation']:
+    for p in ['train', 'test']:
         partition = p
         print('Operations for {} \n'.format(partition))
         
+        #limit = 20000 if partition == 'train' else 3200
         df = read_tokenized_data()
 
         # Create and save tfidf for whole corpus
