@@ -22,10 +22,6 @@ def tfidf_qual_analysis(tfidf, f_names, input_ids, labels):
     # Convert the tfidf scores as DataFrame for the current batch.
     tfidf = pd.DataFrame(tfidf.toarray(), columns=f_names)
 
-    # Assingn zero to some specific columns of tfidf matrix. These are the column names for the following tokens: ['[PAD]', '.', ',', '...' ].
-    tfidf.loc[:,['0','1', '4', '6', '38917']] = 0
-
-
     # Turn GPU Tensor input_ids to CPU DataFrame of strings, so the input_id values could be matched with tfidf column names (which are the same as input_ids).
     input_ids = pd.DataFrame(input_ids.cpu().detach().numpy(), dtype=str)
     
@@ -55,9 +51,6 @@ def map_tfidf(tfidf, f_names, input_ids, device):
     try:
         # Convert the tfidf scores as DataFrame for the current batch.
         tfidf = pd.DataFrame(tfidf.toarray(), columns=f_names)
-
-        # Assingn zero to some specific columns of tfidf matrix. These are the column names for the following tokens: ['[PAD]', '.', ',', '...' ].
-        tfidf.loc[:,['0','1', '4', '6', '38917']] = 0
 
         # Turn GPU Tensor input_ids to CPU DataFrame of strings, so the input_id values could be matched with tfidf column names (which are the same as input_ids).
         input_ids = pd.DataFrame(input_ids.cpu().detach().numpy(), dtype=str)
@@ -92,10 +85,6 @@ def unique_tfidf_qual_analysis(tfidf, f_names, input_ids, labels):
     # Convert the tfidf scores as DataFrame for the current batch.
     tfidf = pd.DataFrame(tfidf.toarray(), columns=f_names)
 
-    # Assingn zero to some specific columns of tfidf matrix. These are the column names for the following tokens: ['[PAD]', '.', ',', '...' ].
-    tfidf.loc[:,['0','1', '4', '6', '38917']] = 0
-
-
     # Turn GPU Tensor input_ids to CPU DataFrame of strings, so the input_id values could be matched with tfidf column names (which are the same as input_ids).
     input_ids = pd.DataFrame(input_ids.cpu().detach().numpy(), dtype=str)
     
@@ -120,10 +109,6 @@ def map_unique_tfidf(tfidf, f_names, input_ids, device):
     try:
         # Convert the tfidf scores as DataFrame for the current batch.
         tfidf = pd.DataFrame(tfidf.toarray(), columns=f_names)
-
-        # Assingn zero to some specific columns of tfidf matrix. These are the column names for the following tokens: ['[PAD]', '.', ',', '...' ].
-        tfidf.loc[:,['0','1', '4', '6', '38917']] = 0
-
 
         # Turn GPU Tensor input_ids to CPU DataFrame of strings, so the input_id values could be matched with tfidf column names (which are the same as input_ids).
         input_ids = pd.DataFrame(input_ids.cpu().detach().numpy(), dtype=str)

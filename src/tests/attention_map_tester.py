@@ -12,6 +12,7 @@ from datetime import datetime
 
 import torch
 from torch.utils.data import DataLoader
+from transformers import LongformerForSequenceClassification, LongformerConfig
 
 sys.path.append(os.getcwd())
 from src.utils.attention_mapper import random_map
@@ -35,6 +36,12 @@ if __name__ == '__main__':
     #Define the available device andd clear the cache.
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     torch.cuda.empty_cache()
+
+    # Utilize the model with custom config file specifiyng classification labels.
+    print('Initializing the Longformer model...')
+    longformer_config = LongformerConfig.from_json_file('src/config/model_configs/longformer.json')
+    model = LongformerForSequenceClassification.from_pretrained('allenai/longformer-base-4096', config=longformer_config)
+    model.gradient_checkpointing_enable()
 
     # Initilize Huggingface accelerator to manage GPU assingments of the data. No need to .to(device) after this.
 
@@ -62,6 +69,10 @@ if __name__ == '__main__':
             tfidf_range_start = finetune_config['train_batch_size']*batch_id
             tfidf_range_end = tfidf_range_start + finetune_config['train_batch_size']
 
-            global_attention_map = random_map(batch['input_ids'], device)
-            for m in global_attention_map:
-                print((m!=0).sum())
+            global_attention_map = random_map(batch['input_ids'], 'cpu')
+
+            outputs = model(batch['input_ids'], 
+                            labels=batch['labels'],
+                            attention_mask=batch['attention_mask'],
+                            global_attention_mask=global_attention_map
+                            )

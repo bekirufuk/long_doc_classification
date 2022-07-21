@@ -1,9 +1,9 @@
 epochs: 5
-train_batch_size: 8
+train_batch_size: 6
 validation_batch_size: 8
 test_batch_size: 8
 
-train_sample_size: 20000
+train_sample_size: 6
 validation_sample_size: 100
 test_sample_size: 3200
 

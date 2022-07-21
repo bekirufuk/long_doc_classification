@@ -1,6 +1,6 @@
 import yaml
 from transformers import LongformerTokenizerFast
-from datasets import Dataset, DatasetDict, Features, Value, ClassLabel, load_dataset, load_from_disk
+from datasets import DatasetDict, Features, Value, ClassLabel, load_dataset, load_from_disk
 
 
 def get_config():
@@ -45,7 +45,6 @@ def longformer_tokenizer(dataset):
     print('Tokenizing the dataset with LongformerTokenizer')
     tokenizer = LongformerTokenizerFast.from_pretrained('allenai/longformer-base-4096', max_length=4096)
     tokenized_data = dataset.map(batch_tokenizer, batched=True, remove_columns=['text'], fn_kwargs= {"tokenizer":tokenizer})
-    #tokenized_data.set_format("torch")
     return tokenized_data
 
 def get_longformer_tokens(data_name='refined_patents', load_tokens=False, test_data_only=False, train_sample_size=None, validation_sample_size=None, test_sample_size=None):
@@ -54,20 +53,58 @@ def get_longformer_tokens(data_name='refined_patents', load_tokens=False, test_d
     else:
         dataset = get_dataset()
         tokenized_data = longformer_tokenizer(dataset)
-        save_longformer_tokens(tokenized_data)
-
-    #tokenized_data.set_format("torch")
+        save_tokens(tokenized_data, 'longformer')
     
     if test_data_only:
         return tokenized_data['test'].select(range(test_sample_size))
     else:
         return tokenized_data['train'].select(range(train_sample_size)) #, tokenized_data['validation'].select(range(validation_sample_size))
 
-def save_longformer_tokens(tokenized_data, data_name='refined_patents'):
+def bert_tokenizer(dataset):
+    print('Tokenizing the dataset with BERT Tokenizer')
+    tokenizer = BertTokenizerFast.from_pretrained('bert-base-uncased', max_length=4096)
+    tokenized_data = dataset.map(batch_tokenizer, batched=True, remove_columns=['text'], fn_kwargs= {"tokenizer":tokenizer})
+    return tokenized_data
+
+def get_bert_tokens(data_name='refined_patents', load_tokens=False, test_data_only=False, train_sample_size=None, validation_sample_size=None, test_sample_size=None):
+    if load_tokens:
+        tokenized_data = load_from_disk('data/'+data_name+'/tokenized/BERT/')
+    else:
+        dataset = get_dataset()
+        tokenized_data = bert_tokenizer(dataset)
+        save_tokens(tokenized_data, 'BERT')
+
+    if test_data_only:
+        return tokenized_data['test'].select(range(test_sample_size))
+    else:
+        return tokenized_data['train'].select(range(train_sample_size)) #, tokenized_data['validation'].select(range(validation_sample_size))
+
+def big_bird_tokenizer(dataset):
+    print('Tokenizing the dataset with Big Bird Tokenizer')
+    tokenizer = BigBirdTokenizerFast.from_pretrained('google/bigbird-roberta-base', max_length=4096)
+    tokenized_data = dataset.map(batch_tokenizer, batched=True, remove_columns=['text'], fn_kwargs= {"tokenizer":tokenizer})
+    return tokenized_data
+
+def get_big_bird_tokens(data_name='refined_patents', load_tokens=False, test_data_only=False, train_sample_size=None, validation_sample_size=None, test_sample_size=None):
+    if load_tokens:
+        tokenized_data = load_from_disk('data/'+data_name+'/tokenized/big_bird/')
+    else:
+        dataset = get_dataset()
+        tokenized_data = big_bird_tokenizer(dataset)
+        save_tokens(tokenized_data, 'big_bird')
+
+    if test_data_only:
+        return tokenized_data['test'].select(range(test_sample_size))
+    else:
+        return tokenized_data['train'].select(range(train_sample_size)) #, tokenized_data['validation'].select(range(validation_sample_size))
+
+def save_tokens(tokenized_data, tokenizer_name, data_name='refined_patents'):
     print("Saving tokenized data...")
-    tokenized_data.save_to_disk('data/'+data_name+'/tokenized/longformer_tokenizer_no_stopwords/')
+    tokenized_data.save_to_disk('data/'+data_name+'/tokenized/'+tokenizer_name+'/')
+
+def upload_dataset_to_huggingface_hub(dataset, name):
+    dataset.push_to_hub(name)
+
 
 if __name__ == '__main__':
     dataset = get_dataset()
-    tokenized_data = longformer_tokenizer(dataset)
-    save_longformer_tokens(tokenized_data)
