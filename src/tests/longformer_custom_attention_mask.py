@@ -1,7 +1,9 @@
 import sys, os
 import yaml
+import wandb
 import pandas as pd
 from tqdm.auto import tqdm
+from datetime import datetime
 
 import torch
 from accelerate import Accelerator
@@ -10,7 +12,7 @@ from transformers import LongformerForSequenceClassification, LongformerConfig, 
 
 sys.path.append(os.getcwd())
 from src.data_processer.process import get_longformer_tokens
-from src.utils.attention_mapper import tfidf_qual_analysis, get_attention_mask, unique_tfidf_qual_analysis
+from sklearn.metrics import accuracy_score
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -24,6 +26,7 @@ def get_finetune_config():
 
 if __name__ == '__main__':
     
+    #Initilize WandB from its config file.
     finetune_config = get_finetune_config()
     
     #Define the available device andd clear the cache.
@@ -66,34 +69,17 @@ if __name__ == '__main__':
     progress_bar = tqdm(range(num_training_step))
     log_interval = int(num_training_step/finetune_config['log_count'])
 
-    # Load the sparse tfidf matrix and the feature_names(containing input_ids as words)
-    tfidf_sparse = pd.read_pickle('data/refined_patents/tfidf/longformer_tokenizer_no_stopwords/train_tfidf_sparse.pkl')
-    f_names = pd.read_pickle('data/refined_patents/tfidf/longformer_tokenizer_no_stopwords/train_f_list.pkl')
+    # Dict to keep track of the running avg. scores
+    train_tracker = {'running_loss':0, 'running_loss_counter':0, 'running_accuracy':0, 'running_accuracy_counter':0}
+    best_train_accuracy=0
 
+    step_counter=0
     model.train()
     print("\n----------\n TRAINING STARTED \n----------\n")
     for epoch in range(finetune_config['epochs']):
         for batch_id, batch in enumerate(train_dataloader):
 
-            # Determine the range of tfidf sparse matrix for the current batch. These document scores will match exatcly with the current batch input docs.
-            tfidf_range_start = finetune_config['train_batch_size']*batch_id
-            tfidf_range_end = tfidf_range_start + finetune_config['train_batch_size']
-
-            attention_mask = get_attention_mask(tfidf_sparse[tfidf_range_start:tfidf_range_end],
-                                                        f_names, batch['input_ids'],
-                                                        #batch['labels'],
-                                                        device
-                                                        )
-
-            '''outputs = model(batch['input_ids'], 
+            outputs = model(batch['input_ids'], 
                         labels=batch['labels'],
-                        attention_mask=attention_mask,
+                        attention_mask=batch['attention_mask'],
                         )
-
-            optimizer.zero_grad()
-            accelerator.backward(outputs.loss)
-
-            optimizer.step()
-            lr_scheduler.step()
-
-            progress_bar.update(1)'''
