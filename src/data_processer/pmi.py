@@ -59,4 +59,11 @@ def check_pmi_scores(w):
         if(i == 200):
             break
 
+def convert_bigrams_to_int(pmi_scores):
+    pmi_scores_int = dict()
+    for key in tqdm(pmi_scores.keys()):
+        int_tuple = tuple((int(key[0]), int(key[1])))
+        pmi_scores_int[int_tuple] = pmi_scores[key]
+
+
 check_pmi_scores(w=10)
