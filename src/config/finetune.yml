@@ -1,21 +1,30 @@
-epochs: 5
+epochs: 2
 train_batch_size: 6
 validation_batch_size: 8
-test_batch_size: 8
+test_batch_size: 6
 
-train_sample_size: 6
+train_sample_size: 6000
 validation_sample_size: 100
-test_sample_size: 3200
+test_sample_size: 320
 
 learning_rate: 0.00003
 weight_decay: 0.01
 scheduler_type: 'cosine'
-warmup_rate: 0.1 
+warmup_rate: 0.1
 
-global_attention_mapping: 'tfidf'
+global_attention_mapping: 'none'
 log_count: 200
 
-model: 'tfidf_longformer'
-model_type: 'longformer'
+model: 'vanilla_big_bird'
+model_type: 'big_bird'
 dataset: 'refined_patents'
+labels_list:
+  - 'A'
+  - 'B'
+  - 'C'
+  - 'D'
+  - 'E'
+  - 'F'
+  - 'G'
+  - 'H'
 classes: 8

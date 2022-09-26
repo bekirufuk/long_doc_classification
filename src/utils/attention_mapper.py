@@ -9,17 +9,20 @@
 import sys
 import numpy as np
 import pandas as pd
+import torch
 from torch import zeros, long
 import matplotlib.pyplot as plt
-from itertools import permutations
+from itertools import combinations
+from sklearn.preprocessing import normalize
 
 # Uncomment below code for 'tfidf_qual_analysis' function.
-'''from transformers import LongformerTokenizerFast
-tokenizer = LongformerTokenizerFast.from_pretrained('allenai/longformer-base-4096', max_length=4096)
+'''from transformers import LongformerTokenizerFast, BigBirdTokenizerFast
+#tokenizer = LongformerTokenizerFast.from_pretrained('allenai/longformer-base-4096', max_length=4096)
+tokenizer = BigBirdTokenizerFast.from_pretrained('google/bigbird-roberta-base', max_length=4096)
 id2label =  {0: "A", 1: "B", 2: "C", 3: "D", 4: "E", 5: "F", 6: "G", 7: "H"}
 label2description= {'A': 'Human Necessities', 'B':'Performing Operations; Transporting', 'C':'Chemistry; Metallurgy','D':'Textiles; Paper',
-                    'E':'Fixed Constructions','F':'Mechanical Engineering; Lighting; Heating; Weapons; Blasting','G':'Physics','H':'Electricity'}'''
-
+                    'E':'Fixed Constructions','F':'Mechanical Engineering; Lighting; Heating; Weapons; Blasting','G':'Physics','H':'Electricity'}
+'''
 def tfidf_qual_analysis(tfidf, f_names, input_ids, labels, device):
 
     # Convert the tfidf scores as DataFrame for the current batch.
@@ -373,7 +376,8 @@ def pmi_qual_analysis(pmi_scores, input_ids, labels):
         print('\n################\n')
 
 def map_unique_pmi(pmi_scores, input_ids, device):
-    window = 10 # Window where the bigram permutations will be calculated. 
+
+    window = 20 # Window where the bigram combinations will be calculated. 
     idlist = list(range(0,4096))
 
     # Initilize an empty global_attention_map with the same size as the input.
@@ -386,19 +390,25 @@ def map_unique_pmi(pmi_scores, input_ids, device):
         pmi_map = np.zeros((4096, 4096))
 
         for k in range(1, 4096-window): # Iterate over window steps.
-            for bigram in permutations(idlist[k:k+window], 2): # Iterate over permutation of token indexes within the current window.
+            for bigram in combinations(idlist[k:k+window], 2): # Iterate over combinations of token indexes within the current window.
                 
                 # Obtain the corresponding input_id from the current bigram of token indexes.
                 x = input_ids[i][bigram[0]] 
                 y = input_ids[i][bigram[1]]
 
-                # If bigram exist among pmi_scores, assign it to its corresponding position in pmi_map. Representing the pmi score of token x and y.
+                # If bigram exist among pmi_scores (we check both cases of (x,y) and (y,x))
+                # assign it to its corresponding position in pmi_map. Representing the pmi score of token x and y.
                 if (x,y) in pmi_scores.keys():
                     pmi_map[bigram[0]][bigram[1]] = pmi_scores[(x,y)]
+                    pmi_map[bigram[1]][bigram[0]] = pmi_scores[(x,y)]
+                elif (y,x) in pmi_scores.keys():
+                    pmi_map[bigram[0]][bigram[1]] = pmi_scores[(y,x)]
+                    pmi_map[bigram[1]][bigram[0]] = pmi_scores[(y,x)]
 
         # For every token, sum its pmi score with every other token to get a representation of that token with relate to the whole document.
         token_scores = pmi_map.sum(axis=1)
 
+        token_scores = normalize([token_scores], norm='l1')[0]
         # Make pmi scores into a DataFrame to be able to drop duplicates on input_ids and still keep the track of pmi_scores and indexes.
         pmi_map = pd.DataFrame(data={'pmi_values':token_scores, 'input_ids':input_ids[i]})
         unique_pmi_map = pmi_map.drop_duplicates(subset=['input_ids'])
@@ -412,3 +422,130 @@ def map_unique_pmi(pmi_scores, input_ids, device):
     # Assign one to the first token of every document since it is the classification ([CLS]) token and should always be globally connected.
     global_attention_map[:, 0] = 1  
     return global_attention_map
+
+def block_map_pmi(pmi_scores, input_ids, device):
+
+    window = 10 # Window where the bigram permutations will be calculated. 
+    idlist = list(range(0,4096))
+
+    pmi_batch_map = np.empty((len(input_ids),12,62,3)) # pmi map to hold scores for the batch in the big bird random block attention format.
+
+
+    input_ids = input_ids.cpu().detach().numpy()
+    for i in range(len(input_ids)): # Iterate over the batch.
+
+        # Define an empty pmi map to potentially contain pmi score of each token for every other token. But since we use a window, the map will not be full.
+        pmi_map = np.zeros((4096, 4096))
+
+        # Calculate the token count omitting padding tokens. (We don't need to look for pmi scors of them)
+        input_len_without_padding = np.count_nonzero(input_ids[i])
+
+        for k in range(1, input_len_without_padding-window): # Iterate over window steps.
+            for bigram in combinations(idlist[k:k+window], 2): # Iterate over combinations of token indexes within the current window.
+
+                # Obtain the corresponding input_id from the current bigram of token indexes.
+                x = input_ids[i][bigram[0]] 
+                y = input_ids[i][bigram[1]]
+
+                # If bigram exist among pmi_scores (we check both cases of (x,y) and (y,x))
+                # assign it to its corresponding position in pmi_map. Representing the pmi score of token x and y.
+                if (x,y) in pmi_scores.keys():
+                    pmi_map[bigram[0]][bigram[1]] = pmi_scores[(x,y)]
+                    pmi_map[bigram[1]][bigram[0]] = pmi_scores[(x,y)]
+                elif (y,x) in pmi_scores.keys():
+                    pmi_map[bigram[0]][bigram[1]] = pmi_scores[(y,x)]
+                    pmi_map[bigram[1]][bigram[0]] = pmi_scores[(y,x)]
+        
+        # Normalize the pmi_map
+        pmi_map = normalize(pmi_map, norm='l1', axis=1)
+        
+        # Desired shape for random attention in big bird is (batch_size,head_size,block_size-2,random_token_count) being (8,12,62,3) in this case.
+        
+        # Group the columns in 64 sized of blocks. For 4096, there will be 64 blocks in total.
+        pmi_map = pmi_map.reshape(4096,64,64)
+
+        # Sum the normalized values into 64 scores, making up to 1 in total.
+        pmi_map = np.sum(pmi_map, axis=2)
+
+        # Now group the rows since the tokens should be grouped into blocks of 64X64.
+        pmi_map = pmi_map.reshape(64,64,64)
+
+        # Sum in the columnwise this time, summing up the normalized values of tokens for every other token in a group of 64. Size is 64X64 after the sum.
+        pmi_map = np.sum(pmi_map, axis=1)
+
+        # Omit the last and the first blocks.
+        pmi_map = pmi_map[1:63,:]
+
+        # Argsort the pmi scores
+        pmi_map = np.argsort(pmi_map,axis=1)
+
+        # Pick the top 3 block with the highest pmi score. So, for each block in the query, we have 3 block idxs to calculate the attention of.
+        pmi_map = pmi_map[:,-3:]
+
+        # Populate the same map for 12 heads of the big bird. Original implementation since its random have different values for different heads. We use the same values instead.
+        pmi_map = np.array([pmi_map for i in range(12)])
+
+        # Add the single input scores to the list of pmi maps for the entire batch.
+        pmi_batch_map[i] = pmi_map
+    
+    return torch.from_numpy(pmi_batch_map).type(torch.long).to(device)
+
+def block_map_tfidf(tfidf, f_names, input_ids, device):
+
+    # tfidf map to hold scores for the batch in the big bird random block attention format.
+    tfidf_batch_map = np.empty((len(input_ids),12,62,3))
+
+    # Convert the tfidf scores as DataFrame for the current batch.
+    tfidf = pd.DataFrame(tfidf.toarray(), columns=f_names)
+
+    # Mark unwanted Big Bird token values to zero.
+    tfidf[['0', '112', '114', '9333']] = 0
+
+    # Turn GPU Tensor input_ids to CPU DataFrame of strings, so the input_id values could be matched with tfidf column names (which are the same as input_ids).
+    input_ids = pd.DataFrame(input_ids.cpu().detach().numpy(), dtype=str)
+    
+    for i in range(input_ids.shape[0]): # For every document(item) in the batch.
+
+        # From the tfidf matrix, obtain the values from row i and the colums that matches the corresponding documents input_ids.
+        # Column names of the tfidf matrix are the same with the all input_ids, we just select the ones that match the current documents input_ids.
+        tfidf_values_of_input = tfidf.loc[i, input_ids.loc[i]]
+        
+        # Cast the tfidf values to numpy array and obtain the indices of a number of highest tfidf scores.
+        # These indices correspond the indices of 'to be globally connected tokens' for the model forward.
+        tfidf_values_of_input = np.array(tfidf_values_of_input, dtype=np.float32)
+
+        tfidf_map = np.multiply.outer(tfidf_values_of_input, tfidf_values_of_input)
+        
+        # Normalize the tfidf_map
+        tfidf_map = normalize(tfidf_map, norm='l1', axis=1)
+        
+        # Desired shape for random attention in big bird is (batch_size,head_size,block_size-2,random_token_count) being (8,12,62,3) in this case.
+        
+        # Group the columns in 64 sized of blocks. For 4096, there will be 64 blocks in total.
+        tfidf_map = tfidf_map.reshape(4096,64,64)
+
+        # Sum the normalized values into 64 scores, making up to 1 in total.
+        tfidf_map = np.sum(tfidf_map, axis=2)
+
+        # Now group the rows since the tokens should be grouped into blocks of 64X64.
+        tfidf_map = tfidf_map.reshape(64,64,64)
+
+        # Sum in the columnwise this time, summing up the normalized values of tokens for every other token in a group of 64. Size is 64X64 after the sum.
+        tfidf_map = np.sum(tfidf_map, axis=1)     
+        
+        # Omit the last and the first blocks.
+        tfidf_map = tfidf_map[1:63,:]
+
+        # Argsort the pmi scores
+        tfidf_map = np.argsort(tfidf_map,axis=1)
+
+        # Pick the top 3 block with the highest tfidf score. So, for each block in the query, we have 3 block idxs to calculate the attention of.
+        tfidf_map = tfidf_map[:,-3:]
+
+        # Populate the same map for 12 heads of the big bird. Original implementation since its random have different values for different heads. We use the same values instead.
+        tfidf_map = np.array([tfidf_map for i in range(12)])
+
+        # Add the single input scores to the list of pmi maps for the entire batch.
+        tfidf_batch_map[i] = tfidf_map
+    
+    return torch.from_numpy(tfidf_batch_map).type(torch.long).to(device)

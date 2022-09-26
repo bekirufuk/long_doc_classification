@@ -1,5 +1,5 @@
 import yaml
-from transformers import LongformerTokenizerFast
+from transformers import LongformerTokenizerFast, BigBirdTokenizerFast
 from datasets import DatasetDict, Features, Value, ClassLabel, load_dataset, load_from_disk
 
 
@@ -40,6 +40,9 @@ def get_dataset(data_name='refined_patents', seed=42, partitions={'train':0.8, '
 
 def batch_tokenizer(batch, tokenizer):
     return tokenizer(batch["text"], padding='max_length', truncation=True)
+
+def no_padding_batch_tokenizer(batch, tokenizer):
+    return tokenizer(batch["text"])
 
 def longformer_tokenizer(dataset):
     print('Tokenizing the dataset with LongformerTokenizer')
@@ -82,7 +85,7 @@ def get_bert_tokens(data_name='refined_patents', load_tokens=False, test_data_on
 def big_bird_tokenizer(dataset):
     print('Tokenizing the dataset with Big Bird Tokenizer')
     tokenizer = BigBirdTokenizerFast.from_pretrained('google/bigbird-roberta-base', max_length=4096)
-    tokenized_data = dataset.map(batch_tokenizer, batched=True, remove_columns=['text'], fn_kwargs= {"tokenizer":tokenizer})
+    tokenized_data = dataset.map(no_padding_batch_tokenizer, batched=True, remove_columns=['text'], fn_kwargs= {"tokenizer":tokenizer})
     return tokenized_data
 
 def get_big_bird_tokens(data_name='refined_patents', load_tokens=False, test_data_only=False, train_sample_size=None, validation_sample_size=None, test_sample_size=None):
@@ -91,7 +94,7 @@ def get_big_bird_tokens(data_name='refined_patents', load_tokens=False, test_dat
     else:
         dataset = get_dataset()
         tokenized_data = big_bird_tokenizer(dataset)
-        save_tokens(tokenized_data, 'big_bird')
+        save_tokens(tokenized_data, 'big_bird_tokenizer')
 
     if test_data_only:
         return tokenized_data['test'].select(range(test_sample_size))
@@ -107,4 +110,4 @@ def upload_dataset_to_huggingface_hub(dataset, name):
 
 
 if __name__ == '__main__':
-    dataset = get_dataset()
+    get_big_bird_tokens(data_name='refined_patents', load_tokens=False, test_data_only=False, train_sample_size=None, validation_sample_size=None, test_sample_size=None)

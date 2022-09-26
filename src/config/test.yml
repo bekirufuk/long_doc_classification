@@ -1,9 +1,9 @@
-epochs: 3
-train_batch_size: 8
+epochs: 1
+train_batch_size: 3
 validation_batch_size: 8
 test_batch_size: 8
 
-train_sample_size: 24
+train_sample_size: 3
 validation_sample_size: 100
 test_sample_size: 3200
 

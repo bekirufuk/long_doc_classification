@@ -10,7 +10,7 @@ from datasets import load_from_disk
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 data_name = 'refined_patents'
-tokenizer = 'longformer'
+tokenizer = 'big_bird'
 partition = ''
 
 def read_tokenized_data(limit=None):
@@ -27,7 +27,7 @@ def read_tokenized_data(limit=None):
         Returns: pandas DataFrame
     '''
     print('Loading tokenized data...')
-    tokenized_data = load_from_disk("data/refined_patents/tokenized/"+tokenizer+"_tokenizer_no_stopwords/")[partition]
+    tokenized_data = load_from_disk("data/refined_patents/tokenized/"+tokenizer)[partition]
     if limit:
         tokenized_data = tokenized_data.select(range(limit))
     tokenized_data = tokenized_data.remove_columns(['ipc_class', 'subclass'])
@@ -71,7 +71,7 @@ def save_tfidf(tfidf_vectors, feature_list, label_based=False, label=None):
     if label_based:
         save_dir = 'data/'+data_name+'/tfidf/longformer_tokenizer_no_stopwords/label_based/'+partition+'_'+str(label)
     else:
-        save_dir = 'data/'+data_name+'/tfidf/longformer_tokenizer_no_stopwords/'+partition
+        save_dir = 'data/'+data_name+'/tfidf/big_bird/'+partition
 
     pickle.dump(tfidf_vectors, open(save_dir+'_tfidf_sparse.pkl', 'wb'))
     pickle.dump(feature_list, open(save_dir+'_f_list.pkl', 'wb'))
@@ -123,4 +123,4 @@ if __name__ == '__main__':
         save_tfidf(tfidf_vectors, feature_list)
 
         # Create and save label based tfidf for local label corpora
-        get_class_based_tfidf(df)
+        #get_class_based_tfidf(df)

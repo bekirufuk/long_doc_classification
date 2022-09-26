@@ -12,6 +12,8 @@ from transformers import BigBirdForSequenceClassification, BigBirdConfig, get_co
 
 sys.path.append(os.getcwd())
 from src.data_processer.process import get_big_bird_tokens
+from src.utils.attention_mapper import block_map_pmi
+
 from sklearn.metrics import accuracy_score
 
 import warnings
@@ -70,6 +72,9 @@ if __name__ == '__main__':
     progress_bar = tqdm(range(num_training_step))
     log_interval = int(num_training_step/finetune_config['log_count'])
 
+    print('Loading PMI Scores...')
+    pmi_scores = pd.read_pickle('data/refined_patents/stats/bigram_pmi_scores_w10_int.pkl')
+    print('PMI Scores Loaded')
 
     step_counter=0
     model.train()
@@ -77,10 +82,14 @@ if __name__ == '__main__':
     for epoch in range(finetune_config['epochs']):
         for batch_id, batch in enumerate(train_dataloader):
 
+            pmi_batch_map = block_map_pmi(pmi_scores, batch['input_ids'], device)
+
             outputs = model(batch['input_ids'], 
-                        labels=batch['labels'],
-                        attention_mask=batch['attention_mask'],
-                        )
+                            labels=batch['labels'],
+                            attention_mask=batch['attention_mask'],
+                            special_random_blocks = pmi_batch_map
+                            )
+                            
             optimizer.zero_grad()
             accelerator.backward(outputs.loss)
 
@@ -89,5 +98,3 @@ if __name__ == '__main__':
 
             progress_bar.update(1)
             step_counter+=1
-
-    print("\n----------\n TRAINING FINISHED \n----------\n")
