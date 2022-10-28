@@ -28,3 +28,4 @@ labels_list:
   - 'G'
   - 'H'
 classes: 8
+operation_type: 'train' #'test'
