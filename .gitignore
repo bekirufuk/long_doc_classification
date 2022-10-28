@@ -8,6 +8,7 @@ reports/
 models/
 notebooks/
 .vscode/
+tokenizers/
 
 *.pkl
 # Byte-compiled / optimized / DLL files
