@@ -12,6 +12,8 @@ def get_training_corpus(dataset):
         yield samples["text"]
 
 
+# special_tokens={'unk_token': '[UNK]', 'sep_token': '[SEP]', 'pad_token': '[PAD]', 'cls_token': '[CLS]', 'mask_token': '[MASK]'})
+
 tokenizer_bert = BertTokenizerFast.from_pretrained("bert-base-uncased", max_length=4096)
 
 dataset = get_dataset()

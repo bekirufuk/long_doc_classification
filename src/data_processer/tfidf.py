@@ -10,7 +10,7 @@ from datasets import load_from_disk
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 data_name = 'refined_patents'
-tokenizer = 'big_bird'
+tokenizer = 'bert_trained_on_patent_data'
 partition = ''
 
 def read_tokenized_data(limit=None):
@@ -69,9 +69,9 @@ def save_tfidf(tfidf_vectors, feature_list, label_based=False, label=None):
     print('Saving pickle files...')
 
     if label_based:
-        save_dir = 'data/'+data_name+'/tfidf/longformer_tokenizer_no_stopwords/label_based/'+partition+'_'+str(label)
+        save_dir = 'data/'+data_name+'/tfidf/'+tokenizer+'/label_based/'+partition+'_'+str(label)
     else:
-        save_dir = 'data/'+data_name+'/tfidf/big_bird/'+partition
+        save_dir = 'data/'+data_name+'/tfidf/'+tokenizer+'/'+partition
 
     pickle.dump(tfidf_vectors, open(save_dir+'_tfidf_sparse.pkl', 'wb'))
     pickle.dump(feature_list, open(save_dir+'_f_list.pkl', 'wb'))
@@ -116,7 +116,7 @@ if __name__ == '__main__':
         print('Operations for {} \n'.format(partition))
         
         #limit = 20000 if partition == 'train' else 3200
-        df = read_tokenized_data()
+        df = read_tokenized_data(limit=20)
 
         # Create and save tfidf for whole corpus
         tfidf_vectors, feature_list = create_tfidf(df)

@@ -1,6 +1,8 @@
-import yaml
-from transformers import LongformerTokenizerFast, BigBirdTokenizerFast
+import yaml, sys
+from transformers import AutoTokenizer
 from datasets import DatasetDict, Features, Value, ClassLabel, load_dataset, load_from_disk
+
+from transformers import LongformerForSequenceClassification, LongformerConfig
 
 
 def get_config():
@@ -88,7 +90,8 @@ def big_bird_tokenizer(dataset):
     tokenized_data = dataset.map(no_padding_batch_tokenizer, batched=True, remove_columns=['text'], fn_kwargs= {"tokenizer":tokenizer})
     return tokenized_data
 
-def get_big_bird_tokens(data_name='refined_patents', load_tokens=False, test_data_only=False, train_sample_size=None, validation_sample_size=None, test_sample_size=None):
+def get_big_bird_tokens(data_name='refined_patents', load_tokens=False, test_data_only=False, 
+ple_size=None, test_sample_size=None):
     if load_tokens:
         tokenized_data = load_from_disk('data/'+data_name+'/tokenized/big_bird/')
     else:
@@ -96,6 +99,25 @@ def get_big_bird_tokens(data_name='refined_patents', load_tokens=False, test_dat
         tokenized_data = big_bird_tokenizer(dataset)
         save_tokens(tokenized_data, 'big_bird_tokenizer')
 
+    if test_data_only:
+        return tokenized_data['test'].select(range(test_sample_size))
+    else:
+        return tokenized_data['train'].select(range(train_sample_size)) #, tokenized_data['validation'].select(range(validation_sample_size))
+
+def tokenize(tokenizer_name, data='refined_patents'):
+    print('Tokenizing the dataset with '+ tokenizer_name)
+
+    dataset = get_dataset(data)
+
+    tokenizer = AutoTokenizer.from_pretrained("tokenizers/"+tokenizer_name, max_length=4096)
+    tokenizer.model_max_length = 4096
+    tokenized_data = dataset.map(batch_tokenizer, batched=True, remove_columns=['text'], fn_kwargs= {"tokenizer":tokenizer})
+
+    save_tokens(tokenized_data, tokenizer_name)
+
+def get_tokens(tokenizer_name, test_data_only=False, data_name='refined_patents', train_sample_size=None, validation_sample_size=None, test_sample_size=None):
+    
+    tokenized_data = load_from_disk('data/'+data_name+'/tokenized/'+tokenizer_name)
     if test_data_only:
         return tokenized_data['test'].select(range(test_sample_size))
     else:
@@ -110,4 +132,4 @@ def upload_dataset_to_huggingface_hub(dataset, name):
 
 
 if __name__ == '__main__':
-    get_big_bird_tokens(data_name='refined_patents', load_tokens=False, test_data_only=False, train_sample_size=None, validation_sample_size=None, test_sample_size=None)
+    tokenize('bert_trained_on_patent_data')
