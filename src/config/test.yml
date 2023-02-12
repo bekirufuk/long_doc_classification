@@ -1,21 +1,34 @@
-epochs: 1
-train_batch_size: 3
+epochs: 5
+train_batch_size: 8
 validation_batch_size: 8
 test_batch_size: 8
 
-train_sample_size: 3
+train_sample_size: 64
 validation_sample_size: 100
-test_sample_size: 3200
+test_sample_size: 16
 
 learning_rate: 0.00003
 weight_decay: 0.01
 scheduler_type: 'cosine'
-warmup_rate: 0.1 
+warmup_rate: 0.1
 
-global_attention_mapping: 'tfidf'
+global_attention_mapping: 'none'
 log_count: 200
 
-model: 'tfidf_longformer'
+model: 'vanilla_longformer'
 model_type: 'longformer'
 dataset: 'refined_patents'
+labels_list:
+  - 'A'
+  - 'B'
+  - 'C'
+  - 'D'
+  - 'E'
+  - 'F'
+  - 'G'
+  - 'H'
 classes: 8
+operation_type: 'test'
+tokenizer: 'bert_trained_on_patent_data'
+log_to_wandb: True
+freeze_layer_count: 7
