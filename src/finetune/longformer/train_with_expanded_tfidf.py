@@ -12,7 +12,7 @@ from transformers import LongformerForSequenceClassification, LongformerConfig, 
 
 sys.path.append(os.getcwd())
 from src.data_processer.process import get_tokens
-from src.utils.attention_mapper import expended_tfidf_qual_analysis
+from src.utils.attention_mapper import map_expanded_unique_tfidf
 from sklearn.metrics import accuracy_score
 
 import warnings
@@ -30,21 +30,22 @@ if __name__ == '__main__':
     #Initilize WandB from its config file.
     finetune_config = get_finetune_config()
     log_name = finetune_config['model'] + '_' + datetime.now().strftime("%Y-%m-%d-%H%M")
-    wandb.init(project="Long Document Classification", 
-                entity="bekirufuk", 
-                config=finetune_config,
-                job_type='finetuning',
-                name=log_name,
-                )
+    if finetune_config['log_to_wandb']:
+        wandb.init(project=finetune_config['project'], 
+                    entity="bekirufuk", 
+                    config=finetune_config,
+                    job_type='finetuning',
+                    name=log_name,
+                    )
     
     #Define the available device andd clear the cache.
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     torch.cuda.empty_cache()
 
     # Initilize Huggingface accelerator to manage GPU assingments of the data. No need to .to(device) after this.
-    accelerator = Accelerator(fp16=True)
-
-    train_data = get_tokens('bert_trained_on_patent_data', test_data_only=False, train_sample_size=finetune_config['train_sample_size'])
+    accelerator = Accelerator(mixed_precision='fp16', gradient_accumulation_steps=2)
+    tokenizer_name = 'bert_trained_on_patent_data'
+    train_data = get_tokens(finetune_config['tokenizer'], test_data_only=False, train_sample_size=finetune_config['train_sample_size'])
     train_data = train_data.remove_columns(['patent_id', 'ipc_class', 'subclass'])
     train_data.set_format("torch")
 
@@ -78,8 +79,8 @@ if __name__ == '__main__':
     log_interval = int(num_training_step/finetune_config['log_count'])
 
     # Load the sparse tfidf matrix and the feature_names(containing input_ids as words)
-    tfidf_sparse = pd.read_pickle('data/refined_patents/tfidf/longformer_tokenizer_no_stopwords/train_tfidf_sparse.pkl')
-    f_names = pd.read_pickle('data/refined_patents/tfidf/longformer_tokenizer_no_stopwords/train_f_list.pkl')
+    tfidf_sparse = pd.read_pickle('data/refined_patents/tfidf/'+finetune_config['tokenizer']+'/train_tfidf_sparse.pkl')
+    f_names = pd.read_pickle('data/refined_patents/tfidf/'+finetune_config['tokenizer']+'/train_f_list.pkl')
 
     # Dict to keep track of the running avg. scores
     train_tracker = {'running_loss':0, 'running_loss_counter':0, 'running_accuracy':0, 'running_accuracy_counter':0}
@@ -90,81 +91,81 @@ if __name__ == '__main__':
     print("\n----------\n TRAINING STARTED \n----------\n")
     for epoch in range(finetune_config['epochs']):
         for batch_id, batch in enumerate(train_dataloader):
+            with accelerator.accumulate(model):
+                # Determine the range of tfidf sparse matrix for the current batch. These document scores will match exatcly with the current batch input docs.
+                tfidf_range_start = finetune_config['train_batch_size']*batch_id
+                tfidf_range_end = tfidf_range_start + finetune_config['train_batch_size']
 
-            # Determine the range of tfidf sparse matrix for the current batch. These document scores will match exatcly with the current batch input docs.
-            tfidf_range_start = finetune_config['train_batch_size']*batch_id
-            tfidf_range_end = tfidf_range_start + finetune_config['train_batch_size']
+                global_attention_map = map_expanded_unique_tfidf(tfidf_sparse[tfidf_range_start:tfidf_range_end], f_names, batch['input_ids'], device)
 
-            global_attention_map = expended_tfidf_qual_analysis(tfidf_sparse[tfidf_range_start:tfidf_range_end], f_names, batch['input_ids'], batch['labels'], device)
-            sys.exit()
+                is_log_step = step_counter % log_interval == 0 and step_counter!=0
 
-            is_log_step = step_counter % log_interval == 0 and step_counter!=0
+                if is_log_step:
+                    outputs = model(batch['input_ids'], 
+                                labels=batch['labels'],
+                                attention_mask=batch['attention_mask'],
+                                global_attention_mask=global_attention_map
+                                )
 
-            if is_log_step:
-                outputs = model(batch['input_ids'], 
-                            labels=batch['labels'],
-                            attention_mask=batch['attention_mask'],
-                            global_attention_mask=global_attention_map
-                            )
+                    
+                    accelerator.backward(outputs.loss)
 
-                optimizer.zero_grad()
-                accelerator.backward(outputs.loss)
+                    optimizer.step()
+                    lr_scheduler.step()
+                    optimizer.zero_grad()
 
-                optimizer.step()
-                lr_scheduler.step()
+                    progress_bar.update(1)
+                    step_counter+=1
 
-                progress_bar.update(1)
-                step_counter+=1
+                    #Update the loss and accuracy tracker values along with their counters
+                    train_tracker['running_loss'] += outputs.loss.cpu()
+                    train_tracker['running_loss_counter'] += 1
 
-                #Update the loss and accuracy tracker values along with their counters
-                train_tracker['running_loss'] += outputs.loss.cpu()
-                train_tracker['running_loss_counter'] += 1
+                    predictions = torch.argmax(outputs.logits, dim=-1)
+                    train_tracker['running_accuracy'] += accuracy_score(batch["labels"].cpu(), predictions.cpu())
+                    train_tracker['running_accuracy_counter'] += 1
 
-                predictions = torch.argmax(outputs.logits, dim=-1)
-                train_tracker['running_accuracy'] += accuracy_score(batch["labels"].cpu(), predictions.cpu())
-                train_tracker['running_accuracy_counter'] += 1
+                    mean_train_loss = train_tracker['running_loss'] / train_tracker['running_loss_counter']
+                    mean_train_accuracy = train_tracker['running_accuracy'] / train_tracker['running_accuracy_counter']
 
-                mean_train_loss = train_tracker['running_loss'] / train_tracker['running_loss_counter']
-                mean_train_accuracy = train_tracker['running_accuracy'] / train_tracker['running_accuracy_counter']
+                    # Save and overwrite the model if performs better then the last model.
+                    if mean_train_accuracy > best_train_accuracy:
+                        best_train_accuracy = mean_train_accuracy
+                        model.save_pretrained('models/{model_type}/{model}'.format(model_type=finetune_config['model_type'], model=finetune_config['model']))
 
-                # Save and overwrite the model if performs better then the last model.
-                if mean_train_accuracy > best_train_accuracy:
-                    best_train_accuracy = mean_train_accuracy
-                    model.save_pretrained('models/{model_type}/{model}'.format(model_type=finetune_config['model_type'], model=finetune_config['model']))
+                    #Log the log to WandB
+                    wandb.log({
+                        "Training Loss": mean_train_loss,
+                        "Training Accuracy": mean_train_accuracy,
+                        "Epoch":epoch+1,
+                        "Learning Rate": lr_scheduler.get_last_lr()[0]
+                    })
 
-                #Log the log to WandB
-                wandb.log({
-                    "Training Loss": mean_train_loss,
-                    "Training Accuracy": mean_train_accuracy,
-                    "Epoch":epoch+1,
-                    "Learning Rate": lr_scheduler.get_last_lr()[0]
-                })
+                    # Reset the tracker values since this is a logging step. It 
+                    train_tracker = {'running_loss':0, 'running_loss_counter':0, 'running_accuracy':0, 'running_accuracy_counter':0}
 
-                # Reset the tracker values since this is a logging step. It 
-                train_tracker = {'running_loss':0, 'running_loss_counter':0, 'running_accuracy':0, 'running_accuracy_counter':0}
+                else:
+                    outputs = model(batch['input_ids'], 
+                                labels=batch['labels'],
+                                attention_mask=batch['attention_mask'],
+                                global_attention_mask=global_attention_map
+                                )
+                    
+                    accelerator.backward(outputs.loss)
 
-            else:
-                outputs = model(batch['input_ids'], 
-                            labels=batch['labels'],
-                            attention_mask=batch['attention_mask'],
-                            global_attention_mask=global_attention_map
-                            )
+                    optimizer.step()
+                    lr_scheduler.step()
+                    optimizer.zero_grad()
 
-                optimizer.zero_grad()
-                accelerator.backward(outputs.loss)
+                    progress_bar.update(1)
+                    step_counter+=1
 
-                optimizer.step()
-                lr_scheduler.step()
+                    train_tracker['running_loss'] += outputs.loss.cpu()
+                    train_tracker['running_loss_counter'] += 1
 
-                progress_bar.update(1)
-                step_counter+=1
-
-                train_tracker['running_loss'] += outputs.loss.cpu()
-                train_tracker['running_loss_counter'] += 1
-
-                predictions = torch.argmax(outputs.logits, dim=-1)
-                train_tracker['running_accuracy'] += accuracy_score(batch["labels"].cpu(), predictions.cpu())
-                train_tracker['running_accuracy_counter'] += 1
+                    predictions = torch.argmax(outputs.logits, dim=-1)
+                    train_tracker['running_accuracy'] += accuracy_score(batch["labels"].cpu(), predictions.cpu())
+                    train_tracker['running_accuracy_counter'] += 1
     print("\n----------\n TRAINING FINISHED \n----------\n")
 
     print("\n----------\n EVALUATION STARTED \n----------\n")
@@ -173,7 +174,7 @@ if __name__ == '__main__':
     # Load the best model.
     model = LongformerForSequenceClassification.from_pretrained('models/{model_type}/{model}'.format(model_type=finetune_config['model_type'], model=finetune_config['model']))
 
-    test_data = get_tokens('bert_trained_on_patent_data', test_data_only=True, test_sample_size=finetune_config['test_sample_size'])
+    test_data = get_tokens(finetune_config['tokenizer'], test_data_only=True, test_sample_size=finetune_config['test_sample_size'])
     test_data = test_data.remove_columns(['patent_id', 'ipc_class', 'subclass'])
     test_data.set_format("torch")
 
@@ -185,8 +186,8 @@ if __name__ == '__main__':
     )
 
     # Load the sparse tfidf matrix and the feature_names(containing input_ids as words)
-    tfidf_sparse = pd.read_pickle('data/refined_patents/tfidf/longformer_tokenizer_no_stopwords/test_tfidf_sparse.pkl')
-    f_names = pd.read_pickle('data/refined_patents/tfidf/longformer_tokenizer_no_stopwords/test_f_list.pkl')
+    tfidf_sparse = pd.read_pickle('data/refined_patents/tfidf/'+finetune_config['tokenizer']+'/test_tfidf_sparse.pkl')
+    f_names = pd.read_pickle('data/refined_patents/tfidf/'+finetune_config['tokenizer']+'/test_f_list.pkl')
 
     num_test_step = len(test_dataloader)
     progress_bar = tqdm(range(num_test_step))
@@ -200,7 +201,7 @@ if __name__ == '__main__':
             tfidf_range_start = finetune_config['test_batch_size']*batch_id
             tfidf_range_end = tfidf_range_start + finetune_config['test_batch_size']
 
-            global_attention_map = map_tfidf(tfidf_sparse[tfidf_range_start:tfidf_range_end], f_names, batch['input_ids'], device)
+            global_attention_map = map_expanded_unique_tfidf(tfidf_sparse[tfidf_range_start:tfidf_range_end], f_names, batch['input_ids'], device)
 
             outputs = model(batch['input_ids'], 
                         labels=batch['labels'],
