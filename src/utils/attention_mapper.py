@@ -16,20 +16,21 @@ from itertools import combinations
 from sklearn.preprocessing import normalize
 
 # Uncomment below code for 'tfidf_qual_analysis' function.
-'''from transformers import LongformerTokenizerFast, BigBirdTokenizerFast
-#tokenizer = LongformerTokenizerFast.from_pretrained('allenai/longformer-base-4096', max_length=4096)
-tokenizer = BigBirdTokenizerFast.from_pretrained('google/bigbird-roberta-base', max_length=4096)
+'''from transformers import AutoTokenizer
+tokenizer_name = 'bert_trained_on_patent_data'
+tokenizer = AutoTokenizer.from_pretrained("tokenizers/"+tokenizer_name, max_length=4096)
 id2label =  {0: "A", 1: "B", 2: "C", 3: "D", 4: "E", 5: "F", 6: "G", 7: "H"}
 label2description= {'A': 'Human Necessities', 'B':'Performing Operations; Transporting', 'C':'Chemistry; Metallurgy','D':'Textiles; Paper',
-                    'E':'Fixed Constructions','F':'Mechanical Engineering; Lighting; Heating; Weapons; Blasting','G':'Physics','H':'Electricity'}
-'''
+                    'E':'Fixed Constructions','F':'Mechanical Engineering; Lighting; Heating; Weapons; Blasting','G':'Physics','H':'Electricity'}'''
+
 def tfidf_qual_analysis(tfidf, f_names, input_ids, labels, device):
 
     # Convert the tfidf scores as DataFrame for the current batch.
     tfidf = pd.DataFrame(tfidf.toarray(), columns=f_names)
 
     # Assingn zero to some specific columns of tfidf matrix. These are the column names for the following tokens: ['[PAD]', '.', ',', '...' ].
-    tfidf.loc[:,['0','1', '4', '6', '38917']] = 0
+    
+    tfidf[['0', '5', '6', '157', '655', '3456', '2714']] = 0
     
     # Turn GPU Tensor input_ids to CPU DataFrame of strings, so the input_id values could be matched with tfidf column names (which are the same as input_ids).
     input_ids = pd.DataFrame(input_ids.cpu().detach().numpy(), dtype=str)
@@ -49,16 +50,16 @@ def tfidf_qual_analysis(tfidf, f_names, input_ids, labels, device):
         top_tfidf_idxs = np.argsort(tf_idf_values_of_input)[-512:]
         global_attention_map[i][top_tfidf_idxs] = 1
 
-        '''# Uncomment below code for a detailed view of the selected input_ids.
+        # Uncomment below code for a detailed view of the selected input_ids.
         print('sorted scores: ', np.sort(tf_idf_values_of_input,)[-1023:])
         print('argsort idxs: ',top_tfidf_idxs)
         print('argsort values: ',tf_idf_values_of_input[top_tfidf_idxs])
-        print('input ids: ', list(input_ids.loc[i][top_tfidf_idxs]))'''
+        print('input ids: ', list(input_ids.loc[i][top_tfidf_idxs]))
         
         # Print the label description of the document along with the determinded global tokens.
-        #print(label2description[id2label[labels[i].item()]],':')
-        #print(tokenizer.convert_ids_to_tokens(list(input_ids.loc[i][top_tfidf_idxs])))
-        #print('\n################\n')
+        print(label2description[id2label[labels[i].item()]],':')
+        print(tokenizer.convert_ids_to_tokens(list(input_ids.loc[i][top_tfidf_idxs])))
+        print('\n################\n')
     global_attention_map[:, 0] = 1  
     visualize_attention_map(global_attention_map[0])
 
@@ -68,7 +69,7 @@ def map_tfidf(tfidf, f_names, input_ids, device):
         tfidf = pd.DataFrame(tfidf.toarray(), columns=f_names)
 
         # Assingn zero to some specific columns of tfidf matrix. These are the column names for the following tokens: ['[PAD]', '.', ',', '...' ].
-        tfidf.loc[:,['0','1', '4', '6', '38917']] = 0
+        tfidf[['0', '5', '6', '157', '655', '3456', '2714']] = 0
 
         # Turn GPU Tensor input_ids to CPU DataFrame of strings, so the input_id values could be matched with tfidf column names (which are the same as input_ids).
         input_ids = pd.DataFrame(input_ids.cpu().detach().numpy(), dtype=str)
@@ -550,41 +551,78 @@ def block_map_tfidf(tfidf, f_names, input_ids, device):
     
     return torch.from_numpy(tfidf_batch_map).type(torch.long).to(device)
 
-def expended_tfidf_qual_analysis(tfidf, f_names, input_ids, labels, device):
-
+def expanded_unique_tfidf_qual_analysis(tfidf, f_names, input_ids, labels, device):
     # Convert the tfidf scores as DataFrame for the current batch.
     tfidf = pd.DataFrame(tfidf.toarray(), columns=f_names)
 
     # Assingn zero to some specific columns of tfidf matrix. These are the column names for the following tokens: ['[PAD]', '.', ',', '...' ].
-    tfidf.loc[:,['0','1', '4', '6', '38917']] = 0
-    
+    tfidf.loc[:,['0','1', '4', '5', '6', '38917']] = 0
+
     # Turn GPU Tensor input_ids to CPU DataFrame of strings, so the input_id values could be matched with tfidf column names (which are the same as input_ids).
     input_ids = pd.DataFrame(input_ids.cpu().detach().numpy(), dtype=str)
-
-    # Initilize an empty global_attention_map with the same size as the input.
-    global_attention_map = zeros(input_ids.shape, dtype=long, device=device)
-
+    
     for i in range(input_ids.shape[0]): # Iterate over the batch
 
         # From the tfidf matrix, obtain the values from row i and the colums that matches the corresponding documents input_ids.
         # Column names of the tfidf matrix are the same with the all input_ids, we just select the ones that match the current documents input_ids.
         tf_idf_values_of_input = tfidf.loc[i, input_ids.loc[i]]
+ 
+        tfidf_map = pd.DataFrame(data={'tfidf_values':tf_idf_values_of_input.values, 'input_ids':tf_idf_values_of_input.index})
 
-        # Cast the tfidf values to numpy array and obtain the indices of a number of highest tfidf scores.
-        # These indices correspond the indices of 'to be globally connected tokens' for the model forward. 
-        tf_idf_values_of_input = np.array(tf_idf_values_of_input, dtype=np.float32)
-        top_tfidf_idxs = np.argsort(tf_idf_values_of_input)[-512:]
-        global_attention_map[i][top_tfidf_idxs] = 1
+        unique_tfidf_map = tfidf_map.drop_duplicates(subset=['input_ids'])
+
+        top_tfidf_idxs = unique_tfidf_map.sort_values(by='tfidf_values')[-102:].index
+
+        expanded_top_tfidf_idxs = np.array([[max(e-2,1), max(e-1,1), e, min(e+1,input_ids.shape[1]), min(e+2,input_ids.shape[1])] for e in top_tfidf_idxs]).flatten()
 
         # Uncomment below code for a detailed view of the selected input_ids.
-        print('sorted scores: ', np.sort(tf_idf_values_of_input,)[-1023:])
-        print('argsort idxs: ',top_tfidf_idxs)
-        print('argsort values: ',tf_idf_values_of_input[top_tfidf_idxs])
-        print('input ids: ', list(input_ids.loc[i][top_tfidf_idxs]))
-        
+        print('sorted scores: ', np.sort(tf_idf_values_of_input,)[-511:])
+        #print('argsort idxs: ',top_tfidf_idxs)
+        print('argsort values: ',tf_idf_values_of_input[expanded_top_tfidf_idxs])
+        print('input ids: ', list(input_ids.loc[i][expanded_top_tfidf_idxs]))
+
         # Print the label description of the document along with the determinded global tokens.
-        #print(label2description[id2label[labels[i].item()]],':')
-        #print(tokenizer.convert_ids_to_tokens(list(input_ids.loc[i][top_tfidf_idxs])))
-        #print('\n################\n')
-    global_attention_map[:, 0] = 1  
-    visualize_attention_map(global_attention_map[0])
+        print(label2description[id2label[labels[i].item()]],':')
+        print(tokenizer.convert_ids_to_tokens(list(input_ids.loc[i][expanded_top_tfidf_idxs])))
+        print('\n################\n')
+
+def map_expanded_unique_tfidf(tfidf, f_names, input_ids, device):
+    try:
+        # Convert the tfidf scores as DataFrame for the current batch.
+        tfidf = pd.DataFrame(tfidf.toarray(), columns=f_names)
+
+        # Assingn zero to some specific columns of tfidf matrix. These are the column names for the following tokens: ['[PAD]', '.', ',', '...' ].
+        tfidf[['0','1', '4', '5', '6', '38917']] = 0
+
+        # Turn GPU Tensor input_ids to CPU DataFrame of strings, so the input_id values could be matched with tfidf column names (which are the same as input_ids).
+        input_ids = pd.DataFrame(input_ids.cpu().detach().numpy(), dtype=str)
+
+        # Initilize an empty global_attention_map with the same size as the input.
+        global_attention_map = zeros(input_ids.shape, dtype=long, device=device)
+
+        for i in range(input_ids.shape[0]): # Iterate over the batch
+
+            # From the tfidf matrix, obtain the values from row i and the colums that matches the corresponding documents input_ids.
+            # Column names of the tfidf matrix are the same with the all input_ids, we just select the ones that match the current documents input_ids.
+            tf_idf_values_of_input = tfidf.loc[i, input_ids.loc[i]]
+    
+            tfidf_map = pd.DataFrame(data={'tfidf_values':tf_idf_values_of_input.values, 'input_ids':tf_idf_values_of_input.index})
+
+            unique_tfidf_map = tfidf_map.drop_duplicates(subset=['input_ids'])
+
+            top_tfidf_idxs = unique_tfidf_map.sort_values(by='tfidf_values')[-50:].index
+
+            expanded_top_tfidf_idxs = np.array([[max(e-2,1), max(e-1,1), e, min(e+1,input_ids.shape[1]), min(e+2,input_ids.shape[1])] for e in top_tfidf_idxs]).flatten()
+
+            # Assign the value one to the positions of determined global tokens.
+            global_attention_map[i][expanded_top_tfidf_idxs] = 1
+        
+        # Assign one to the first token of every document since it is the classification ([CLS]) token and should always be globally connected.
+        global_attention_map[:, 0] = 1  
+        return global_attention_map
+
+    except Exception as e:
+        print('Error: ',e)
+        global_attention_map = zeros(input_ids.shape, dtype=long, device=device)
+        global_attention_map[:, 0] = 1  
+        return global_attention_map
