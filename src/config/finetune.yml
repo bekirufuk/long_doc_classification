@@ -32,4 +32,4 @@ operation_type: 'train' #'test'
 tokenizer: 'bert_trained_on_patent_data'
 log_to_wandb: True
 project: 'Long Document Classification'
-freeze_layer_count: 7
+freeze_layer_count: 0
