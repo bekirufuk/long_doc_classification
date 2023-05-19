@@ -38,7 +38,6 @@ if __name__ == '__main__':
     
     #Define the available device andd clear the cache.
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    torch.cuda.empty_cache()
 
     # Initilize Huggingface accelerator to manage GPU assingments of the data. No need to .to(device) after this.
     accelerator = Accelerator(mixed_precision='fp16')
@@ -52,12 +51,15 @@ if __name__ == '__main__':
     longformer_config = LongformerConfig.from_json_file('src/config/model_configs/longformer.json')
     model = LongformerForSequenceClassification.from_pretrained('allenai/longformer-base-4096', config=longformer_config)
     model.gradient_checkpointing_enable()
+    model = torch.compile(model)
 
-    freezing_modules = [model.longformer.encoder.layer[:finetune_config['freeze_layer_count']]]
+    if finetune_config['freeze_layer_count'] > 0:
+        print("{} Layers frozen.".format(finetune_config['freeze_layer_count']))
+        freezing_modules = [model.longformer.encoder.layer[:finetune_config['freeze_layer_count']]]
 
-    for module in freezing_modules:
-        for param in module.parameters():
-            param.requires_grad = False
+        for module in freezing_modules:
+            for param in module.parameters():
+                param.requires_grad = False
 
     train_dataloader = DataLoader(train_data, batch_size=finetune_config['train_batch_size'])
 
@@ -123,14 +125,14 @@ if __name__ == '__main__':
                 if mean_train_accuracy > best_train_accuracy:
                     best_train_accuracy = mean_train_accuracy
                     model.save_pretrained('models/{model_type}/{model}'.format(model_type=finetune_config['model_type'], model=finetune_config['model']))
-
-                #Log the log to WandB
-                wandb.log({
-                    "Training Loss": mean_train_loss,
-                    "Training Accuracy": mean_train_accuracy,
-                    "Epoch":epoch+1,
-                    "Learning Rate": lr_scheduler.get_last_lr()[0]
-                })
+                
+                if finetune_config['log_to_wandb']:
+                    wandb.log({
+                        "Training Loss": mean_train_loss,
+                        "Training Accuracy": mean_train_accuracy,
+                        "Epoch":epoch+1,
+                        "Learning Rate": lr_scheduler.get_last_lr()[0]
+                    })
 
                 # Reset the tracker values since this is a logging step. It 
                 train_tracker = {'running_loss':0, 'running_loss_counter':0, 'running_accuracy':0, 'running_accuracy_counter':0}
@@ -163,6 +165,7 @@ if __name__ == '__main__':
 
     # Load the best model.
     model = LongformerForSequenceClassification.from_pretrained('models/{model_type}/{model}'.format(model_type=finetune_config['model_type'], model=finetune_config['model']))
+    model = torch.compile(model)
 
     test_data = get_tokens(finetune_config['tokenizer'], test_data_only=True, test_sample_size=finetune_config['test_sample_size'])
     test_data = test_data.remove_columns(['patent_id', 'ipc_class', 'subclass'])
@@ -196,6 +199,7 @@ if __name__ == '__main__':
 
     test_accuracy = test_running_accuracy / (batch_id+1)
 
-    wandb.log({"Test Accuracy":test_accuracy})
+    if finetune_config['log_to_wandb']:
+        wandb.log({"Test Accuracy":test_accuracy})
 
     print("\n----------\n EVALUATION FINISHED \n----------\n")
