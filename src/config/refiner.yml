@@ -51,7 +51,7 @@ id2label:
   7: "H"
 
 label2description:
-  'A': 'Human Necessities'
+  'A':'Human Necessities'
   'B':'Performing Operations; Transporting'
   'C':'Chemistry; Metallurgy'
   'D':'Textiles; Paper'
