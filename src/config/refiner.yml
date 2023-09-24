@@ -1,8 +1,7 @@
 data_name: "refined_patents"
-
 patent_columns:
   - 'patent_id'
-  - 'text'
+  - 'description_text'
 patent_dtypes:
   patent_id: 'object'
   text: 'object'
@@ -18,8 +17,9 @@ ipcr_dtypes:
   ipc_class: 'object'
   subclass: 'object'
 
-chunksize: 20000
+chunk_size: 20000
 initial_record_count: 0
+initial_short_record_count: 0
 
 labels:
   - 'A'
@@ -51,11 +51,11 @@ id2label:
   7: "H"
 
 label2description:
-  'A':'Human Necessities'
-  'B':'Performing Operations; Transporting'
-  'C':'Chemistry; Metallurgy'
-  'D':'Textiles; Paper'
-  'E':'Fixed Constructions'
-  'F':'Mechanical Engineering; Lighting; Heating; Weapons; Blasting'
-  'G':'Physics'
-  'H':'Electricity'
+  'A': 'Human Necessities'
+  'B': 'Performing Operations; Transporting'
+  'C': 'Chemistry; Metallurgy'
+  'D': 'Textiles; Paper'
+  'E': 'Fixed Constructions'
+  'F': 'Mechanical Engineering; Lighting; Heating; Weapons; Blasting'
+  'G': 'Physics'
+  'H': 'Electricity'
