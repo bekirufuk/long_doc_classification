@@ -17,10 +17,12 @@ def preprocess_chunks(limit=None):
         # Remove every character except letters, comma(,), dot(.) and a space( )
         chunk['text'] = chunk['text'].apply(lambda x: re.sub(r"[^A-Za-z., ]", "", x))
 
-        chunk['text'] = chunk['text'].apply(lambda x: ' '.join([word for word in x.split() if word not in stopwords.words('english')]) )
+        # chunk['text'] = chunk['text'].apply(lambda x: ' '.join([word for word in x.split() if word not in stopwords.words('english')]))
 
-        chunk_dir= "data/"+data_name+"/chunks/preprocessed/"+os.path.basename(file)
+        chunk_dir = "data/"+data_name+"/chunks/preprocessed/"+os.path.basename(file)
         print(chunk_dir)
         chunk.to_csv(chunk_dir, index=False)
 
-preprocess_chunks()
+
+if __name__ == '__main__':
+    preprocess_chunks()
