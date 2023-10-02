@@ -1,6 +1,6 @@
 import yaml
 import sys
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, LongformerTokenizerFast
 from datasets import DatasetDict, Features, Value, ClassLabel, load_dataset, load_from_disk
 
 from transformers import LongformerForSequenceClassification, LongformerConfig
@@ -20,7 +20,7 @@ def get_dataset(data_name='refined_patents', seed=42, partitions={'train': 0.8, 
         data_name (string): Folder name of the data to be used. Default:'refined_patents' Current options: ['refined_patents', 'sample_refined_patents']
 
         Returns:
-        dataset: A Huggingface dataset object. https://huggingface.co/docs/datasets/access 
+        dataset: A Huggingface dataset object. https://huggingface.co/docs/datasets/access
         """
     print("Loading dataset from csv...")
     features = Features({'patent_id': Value('string'),
@@ -28,8 +28,9 @@ def get_dataset(data_name='refined_patents', seed=42, partitions={'train': 0.8, 
                          'labels': ClassLabel(names=["A", "B", "C", "D", "E", "F", "G", "H"]),
                          'ipc_class': Value('string'),
                          'subclass': Value('string'),
+                         'word_counts':Value('int64')
                          })
-    data_files = 'data/' + data_name + '/chunks/preprocessed/*.csv'
+    data_files = 'data/' + data_name + '/short_patent_chunks/*.csv'
 
     dataset = load_dataset('csv', data_files=data_files, features=features, cache_dir='data/' + data_name + '/cache')
     dataset = dataset['train'].train_test_split(test_size=partitions['test_validation'], shuffle=True, seed=seed)
@@ -145,4 +146,4 @@ def upload_dataset_to_huggingface_hub(dataset, name):
 
 
 if __name__ == '__main__':
-    tokenize('bert_trained_on_patent_data')
+    get_longformer_tokens(data_name='refined_patents', load_tokens=False, test_data_only=False, train_sample_size=10000, validation_sample_size=None, test_sample_size=1000)

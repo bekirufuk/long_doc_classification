@@ -1,4 +1,5 @@
-import sys, os
+import sys
+import os
 import yaml
 import wandb
 import pandas as pd
@@ -19,7 +20,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 def get_finetune_config():
     config_dir = 'src/config/finetune.yml'
-    with open(config_dir,'r') as f:
+    with open(config_dir, 'r') as f:
         config = yaml.load(f, Loader=yaml.Loader)
     return config
 
@@ -39,14 +40,14 @@ if __name__ == '__main__':
     #Define the available device andd clear the cache.
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-    # Initilize Huggingface accelerator to manage GPU assingments of the data. No need to .to(device) after this.
+    # Initialize Huggingface accelerator to manage GPU assignments of the data. No need to .to(device) after this.
     accelerator = Accelerator(mixed_precision='fp16')
 
     train_data = get_tokens(finetune_config['tokenizer'], test_data_only=False, train_sample_size=finetune_config['train_sample_size'])
     train_data = train_data.remove_columns(['patent_id', 'ipc_class', 'subclass'])
     train_data.set_format("torch")
 
-    # Utilize the model with custom config file specifiyng classification labels.
+    # Utilize the model with custom config file specifying classification labels.
     print('Initializing the Longformer model...')
     longformer_config = LongformerConfig.from_json_file('src/config/model_configs/longformer.json')
     model = LongformerForSequenceClassification.from_pretrained('allenai/longformer-base-4096', config=longformer_config)
@@ -65,7 +66,7 @@ if __name__ == '__main__':
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=finetune_config['learning_rate'], weight_decay=finetune_config['weight_decay'])
 
-    # Load the data with accelerator for a better GPU performence. No need to send it into the device.
+    # Load the data with accelerator for a better GPU performance. No need to send it into the device.
     train_dataloader, model, optimizer = accelerator.prepare(
         train_dataloader, model, optimizer
     )
@@ -110,7 +111,7 @@ if __name__ == '__main__':
                 progress_bar.update(1)
                 step_counter+=1
 
-                #Update the loss and accuracy tracker values along with their counters
+                # Update the loss and accuracy tracker values along with their counters
                 train_tracker['running_loss'] += outputs.loss.cpu()
                 train_tracker['running_loss_counter'] += 1
 
@@ -121,7 +122,7 @@ if __name__ == '__main__':
                 mean_train_loss = train_tracker['running_loss'] / train_tracker['running_loss_counter']
                 mean_train_accuracy = train_tracker['running_accuracy'] / train_tracker['running_accuracy_counter']
 
-                # Save and overwrite the model if performs better then the last model.
+                # Save and overwrite the model if performs better than the last model.
                 if mean_train_accuracy > best_train_accuracy:
                     best_train_accuracy = mean_train_accuracy
                     model.save_pretrained('models/{model_type}/{model}'.format(model_type=finetune_config['model_type'], model=finetune_config['model']))
@@ -173,7 +174,7 @@ if __name__ == '__main__':
 
     test_dataloader = DataLoader(test_data, batch_size=finetune_config['test_batch_size'])
 
-    # Load the data with accelerator for a better GPU performence. No need to send it into the device.
+    # Load the data with accelerator for a better GPU performance. No need to send it into the device.
     test_dataloader, model = accelerator.prepare(
         test_dataloader, model
     )

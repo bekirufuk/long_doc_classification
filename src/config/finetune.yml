@@ -3,9 +3,9 @@ train_batch_size: 8
 validation_batch_size: 8
 test_batch_size: 8
 
-train_sample_size: 20000
+train_sample_size: 10000
 validation_sample_size: 100
-test_sample_size: 3200
+test_sample_size: 1000
 
 learning_rate: 0.00003
 weight_decay: 0.01
@@ -29,7 +29,7 @@ labels_list:
   - 'H'
 classes: 8
 operation_type: 'train' #'test'
-tokenizer: 'bert_trained_on_patent_data'
+tokenizer: 'longformer'
 log_to_wandb: True
 project: 'Long Document Classification'
 freeze_layer_count: 0
