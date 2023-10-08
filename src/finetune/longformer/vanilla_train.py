@@ -3,6 +3,7 @@ import os
 import yaml
 import wandb
 import pandas as pd
+import numpy as np
 from tqdm.auto import tqdm
 from datetime import datetime
 
@@ -13,7 +14,8 @@ from transformers import LongformerForSequenceClassification, LongformerConfig, 
 
 sys.path.append(os.getcwd())
 from src.data_processer.process import get_tokens
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, confusion_matrix
+import plotly.express as px
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -184,6 +186,11 @@ if __name__ == '__main__':
 
     test_running_accuracy = 0
 
+    predictions_list = []
+    len_list= []
+    is_equal_list = []
+
+    confmatrix = np.zeros((finetune_config['classes'],finetune_config['classes']), dtype=np.int32)
     with torch.no_grad():
         for batch_id, batch in enumerate(test_dataloader):
 
@@ -196,11 +203,40 @@ if __name__ == '__main__':
 
             test_running_accuracy += accuracy_score(batch["labels"].cpu(), predictions.cpu())
 
+            # Calculate the token count omitting padding tokens
+            input_len_without_padding = torch.count_nonzero(batch['input_ids'], dim=1)
+
+            confmatrix += confusion_matrix(batch['labels'].cpu(), predictions.cpu(), labels=range(finetune_config['classes']))
+
+            len_list.extend(input_len_without_padding.cpu().detach().numpy())
+            predictions_list.extend(predictions.cpu().detach().numpy())
+            is_equal_list.extend(torch.eq(predictions, batch['labels']).cpu().detach().numpy())
+
             progress_bar.update(1)
 
+    confmatrix = px.imshow(confmatrix, text_auto=True, aspect='equal',
+                        color_continuous_scale ='Blues',
+                        x=finetune_config['labels_list'],
+                        y=finetune_config['labels_list'],
+                        labels={'x':'Prediction', 'y':'Actual'}
+                        )
+
+    lengthwise_results = pd.DataFrame(data={'len': len_list, 'prediction': predictions_list, 'label': test_data['labels'], 'is_correct': is_equal_list})
     test_accuracy = test_running_accuracy / (batch_id+1)
 
+
     if finetune_config['log_to_wandb']:
-        wandb.log({"Test Accuracy":test_accuracy})
+        wandb.log({"Test Accuracy": test_accuracy,
+                   'Lengthwise Performance': wandb.data_types.Plotly(px.histogram(lengthwise_results,
+                                                                                  x='len',
+                                                                                  marginal="violin",
+                                                                                  color='is_correct',
+                                                                                  hover_data=lengthwise_results.columns,
+                                                                                  text_auto=True,
+                                                                                  color_discrete_map={'True': 'Green', 'False': 'Red'},
+                                                                                  barmode='group',
+                                                                                  nbins=30)),
+                   'Confusion Matrix': wandb.data_types.Plotly(confmatrix)
+                   })
 
     print("\n----------\n EVALUATION FINISHED \n----------\n")
