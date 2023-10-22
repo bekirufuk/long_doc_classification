@@ -2,8 +2,10 @@ import sys, os
 import yaml
 import wandb
 import pandas as pd
+import numpy as np
 from tqdm.auto import tqdm
 from datetime import datetime
+import plotly.express as px
 
 import torch
 from accelerate import Accelerator
@@ -13,7 +15,7 @@ from transformers import LongformerForSequenceClassification, LongformerConfig, 
 sys.path.append(os.getcwd())
 from src.data_processer.process import get_tokens
 from src.utils.attention_mapper import map_tfidf
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, confusion_matrix
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -200,6 +202,11 @@ if __name__ == '__main__':
 
     test_running_accuracy = 0
 
+    predictions_list = []
+    len_list= []
+    is_equal_list = []
+
+    confmatrix = np.zeros((finetune_config['classes'], finetune_config['classes']), dtype=np.int32)
     with torch.no_grad():
         for batch_id, batch in enumerate(test_dataloader):
 
@@ -219,7 +226,22 @@ if __name__ == '__main__':
 
             test_running_accuracy += accuracy_score(batch["labels"].cpu(), predictions.cpu())
 
+            # Calculate the token count omitting padding tokens
+            input_len_without_padding = torch.count_nonzero(batch['input_ids'], dim=1)
+
+            confmatrix += confusion_matrix(batch['labels'].cpu(), predictions.cpu(), labels=range(finetune_config['classes']))
+
+            len_list.extend(input_len_without_padding.cpu().detach().numpy())
+            predictions_list.extend(predictions.cpu().detach().numpy())
+            is_equal_list.extend(torch.eq(predictions, batch['labels']).cpu().detach().numpy())
             progress_bar.update(1)
+
+    confmatrix = px.imshow(confmatrix, text_auto=True, aspect='equal',
+                        color_continuous_scale ='Blues',
+                        x=finetune_config['labels_list'],
+                        y=finetune_config['labels_list'],
+                        labels={'x':'Prediction', 'y':'Actual'}
+                        )
 
     test_accuracy = test_running_accuracy / (batch_id+1)
 

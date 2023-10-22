@@ -30,7 +30,6 @@ labels:
   - 'F'
   - 'G'
   - 'H'
-
 label2id:
   'A': 0
   'B': 1
@@ -49,7 +48,6 @@ id2label:
   5: "F"
   6: "G"
   7: "H"
-
 label2description:
   'A': 'Human Necessities'
   'B': 'Performing Operations; Transporting'
@@ -59,3 +57,6 @@ label2description:
   'F': 'Mechanical Engineering; Lighting; Heating; Weapons; Blasting'
   'G': 'Physics'
   'H': 'Electricity'
+
+subclasses:
+  ''
