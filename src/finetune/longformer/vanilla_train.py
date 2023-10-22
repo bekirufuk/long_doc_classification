@@ -214,6 +214,9 @@ if __name__ == '__main__':
 
             progress_bar.update(1)
 
+    row_sums = confmatrix.sum(axis=1)
+    confmatrix = confmatrix / row_sums[:, np.newaxis]
+    confmatrix = np.round(confmatrix, 2)
     confmatrix = px.imshow(confmatrix, text_auto=True, aspect='equal',
                         color_continuous_scale ='Blues',
                         x=finetune_config['labels_list'],
