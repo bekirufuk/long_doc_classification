@@ -231,6 +231,7 @@ if __name__ == '__main__':
     if finetune_config['log_to_wandb']:
         wandb.log({"Test Accuracy": test_accuracy,
                    'Lengthwise Performance': wandb.data_types.Plotly(px.histogram(lengthwise_results,
+                                                                                  histnorm='percent',
                                                                                   x='len',
                                                                                   marginal="violin",
                                                                                   color='is_correct',
@@ -238,7 +239,7 @@ if __name__ == '__main__':
                                                                                   text_auto=True,
                                                                                   color_discrete_map={'True': 'Green', 'False': 'Red'},
                                                                                   barmode='group',
-                                                                                  nbins=30)),
+                                                                                  nbins=10)),
                    'Confusion Matrix': wandb.data_types.Plotly(confmatrix)
                    })
 
