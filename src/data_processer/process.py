@@ -30,7 +30,38 @@ def get_dataset(data_name='refined_patents', seed=42, partitions={'train': 0.8, 
                          'subclass': Value('string'),
                          'word_counts':Value('int64')
                          })
-    data_files = 'data/' + data_name + '/short_patent_chunks/*.csv'
+    data_files = 'data/' + data_name + '/chunks/*.csv'
+
+    dataset = load_dataset('csv', data_files=data_files, features=features, cache_dir='data/' + data_name + '/cache')
+    dataset = dataset['train'].train_test_split(test_size=partitions['test_validation'], shuffle=True, seed=seed)
+    test_val = dataset['test'].train_test_split(test_size=0.5, shuffle=True, seed=seed)
+
+    dataset = DatasetDict({
+        'train': dataset['train'],
+        'validation': test_val['train'],
+        'test': test_val['test']
+    })
+    return dataset
+
+
+def get_g_section_dataset(data_name='refined_patents', seed=42, partitions={'train': 0.8, 'test_validation': 0.2}):
+    """Obtain the refined_patents data files as a dataset.
+
+        Parameters:
+        data_name (string): Folder name of the data to be used. Default:'refined_patents' Current options: ['refined_patents', 'sample_refined_patents']
+
+        Returns:
+        dataset: A Huggingface dataset object. https://huggingface.co/docs/datasets/access
+        """
+    print("Loading dataset from csv...")
+    features = Features({'patent_id': Value('string'),
+                         'text': Value('string'),
+                         'labels': ClassLabel(num_classes=12, names=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 21]),
+                         'section': Value('string'),
+                         'subclass': Value('string'),
+                         'word_counts': Value('int64')
+                         })
+    data_files = 'data/' + data_name + '/chunks/g.csv'
 
     dataset = load_dataset('csv', data_files=data_files, features=features, cache_dir='data/' + data_name + '/cache')
     dataset = dataset['train'].train_test_split(test_size=partitions['test_validation'], shuffle=True, seed=seed)
@@ -101,8 +132,7 @@ def big_bird_tokenizer(dataset):
     return tokenized_data
 
 
-def get_big_bird_tokens(data_name='refined_patents', load_tokens=False, test_data_only=False,
-                        ple_size=None, test_sample_size=None):
+def get_big_bird_tokens(data_name='refined_patents', load_tokens=False, test_data_only=False, train_sample_size=None, test_sample_size=None):
     if load_tokens:
         tokenized_data = load_from_disk('data/' + data_name + '/tokenized/big_bird/')
     else:
@@ -145,5 +175,26 @@ def upload_dataset_to_huggingface_hub(dataset, name):
     dataset.push_to_hub(name)
 
 
+def get_g_section_longformer_tokens(data_name='refined_patents', load_tokens=False, test_data_only=False, train_sample_size=None, validation_sample_size=None, test_sample_size=None):
+    if load_tokens:
+        tokenized_data = load_from_disk('data/' + data_name + '/tokenized/longformer_g_section/')
+    else:
+        dataset = get_g_section_dataset()
+        tokenized_data = longformer_tokenizer(dataset)
+        save_tokens(tokenized_data, 'longformer_g_section')
+
+    if test_data_only:
+        if test_sample_size:
+            return tokenized_data['test'].select(range(test_sample_size))
+        else:
+            return tokenized_data['test']
+
+    else:
+        if train_sample_size:
+            return tokenized_data['train'].select(range(train_sample_size))  # , tokenized_data['validation'].select(range(validation_sample_size))
+        else:
+            return tokenized_data['train']
+
+
 if __name__ == '__main__':
-    get_longformer_tokens(data_name='refined_patents', load_tokens=False, test_data_only=False, train_sample_size=10000, validation_sample_size=None, test_sample_size=1000)
+    get_g_section_longformer_tokens(data_name='refined_patents', load_tokens=False, test_data_only=False)
