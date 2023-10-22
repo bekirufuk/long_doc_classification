@@ -27,9 +27,9 @@ labels_list:
   - 'F'
   - 'G'
   - 'H'
-classes: 8
+classes: 12
 operation_type: 'train' #'test'
-tokenizer: 'longformer'
-log_to_wandb: False
+tokenizer: 'longformer_g_section'
+log_to_wandb: True
 project: 'Long Document Classification'
 freeze_layer_count: 0

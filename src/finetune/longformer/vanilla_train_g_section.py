@@ -21,7 +21,7 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
 def get_finetune_config():
-    config_dir = 'src/config/finetune.yml'
+    config_dir = 'src/config/g_section_finetune.yml'
     with open(config_dir, 'r') as f:
         config = yaml.load(f, Loader=yaml.Loader)
     return config
@@ -46,15 +46,15 @@ if __name__ == '__main__':
     accelerator = Accelerator(mixed_precision='fp16')
 
     train_data = get_tokens(finetune_config['tokenizer'], test_data_only=False, train_sample_size=finetune_config['train_sample_size'])
-    train_data = train_data.remove_columns(['patent_id', 'ipc_class', 'subclass'])
+    # train_data = train_data.remove_columns(['patent_id', 'ipc_class', 'subclass'])
     train_data.set_format("torch")
 
     # Utilize the model with custom config file specifying classification labels.
     print('Initializing the Longformer model...')
-    longformer_config = LongformerConfig.from_json_file('src/config/model_configs/longformer.json')
+    longformer_config = LongformerConfig.from_json_file('src/config/model_configs/longformer_g_section.json')
     model = LongformerForSequenceClassification.from_pretrained('allenai/longformer-base-4096', config=longformer_config)
     model.gradient_checkpointing_enable()
-    model = torch.compile(model)
+    # model = torch.compile(model)
 
     if finetune_config['freeze_layer_count'] > 0:
         print("{} Layers frozen.".format(finetune_config['freeze_layer_count']))
@@ -223,7 +223,7 @@ if __name__ == '__main__':
                         y=finetune_config['labels_list'],
                         labels={'x':'Prediction', 'y':'Actual'}
                         )
-    
+
     lengthwise_results = pd.DataFrame(data={'len': len_list, 'prediction': predictions_list, 'label': test_data['labels'], 'is_correct': is_equal_list})
     test_accuracy = test_running_accuracy / (batch_id+1)
 
@@ -231,7 +231,6 @@ if __name__ == '__main__':
     if finetune_config['log_to_wandb']:
         wandb.log({"Test Accuracy": test_accuracy,
                    'Lengthwise Performance': wandb.data_types.Plotly(px.histogram(lengthwise_results,
-                                                                                  histnorm='percent',
                                                                                   x='len',
                                                                                   marginal="violin",
                                                                                   color='is_correct',
@@ -239,7 +238,7 @@ if __name__ == '__main__':
                                                                                   text_auto=True,
                                                                                   color_discrete_map={'True': 'Green', 'False': 'Red'},
                                                                                   barmode='group',
-                                                                                  nbins=10)),
+                                                                                  nbins=30)),
                    'Confusion Matrix': wandb.data_types.Plotly(confmatrix)
                    })
 
