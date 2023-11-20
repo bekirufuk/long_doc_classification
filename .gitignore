@@ -9,7 +9,7 @@ models/
 # notebooks/
 .vscode/
 tokenizers/
-
+creds/
 *.pkl
 # Byte-compiled / optimized / DLL files
 __pycache__/
