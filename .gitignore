@@ -6,7 +6,7 @@ data/*/*
 wandb/
 reports/
 models/
-# notebooks/
+notebooks/
 .vscode/
 tokenizers/
 creds/
